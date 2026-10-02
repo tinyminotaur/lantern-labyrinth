@@ -111,6 +111,14 @@ legend { padding: 0 0 8px; font: 500 11px var(--font-mono); text-transform: uppe
 #hLives .gone { opacity: 0.2; }
 .card .btnrow { display: flex; gap: 8px; }
 .card .btnrow button { flex: 1; }
+.card.escapecard { max-width: min(620px, 100%); width: 100%; max-height: 100%; padding: 0; gap: 0; overflow-y: auto; overscroll-behavior: contain; background: rgba(19, 15, 31, 0.97); }
+.escape canvas { width: 100%; height: auto; max-height: 46vh; object-fit: cover; display: block; aspect-ratio: 560 / 300; border-radius: 14px 14px 0 0; }
+.escbody { padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 10px; }
+.escbody .story { font-size: 14px; }
+.stats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font: 400 11px/1.3 var(--font-mono); color: var(--dim); }
+.stats li { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.stats b { font: 500 22px var(--font-mono); color: var(--bone); }
+@media (max-width: 480px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 .card.introcard { max-width: min(800px, 100%); width: 100%; max-height: 100%; padding: 0; gap: 0; overflow-y: auto; overscroll-behavior: contain; text-align: left; background: rgba(19, 15, 31, 0.97); }
 .intro { display: flex; flex-direction: column; }
 .card .intro > * { margin-inline: 18px; }
@@ -294,6 +302,7 @@ body { margin: 0; }
     ghostDie: () => { tone(700, 0.55, 'sine', 0.05, 0.4); tone(1050, 0.65, 'sine', 0.03, 0.4, 0.08); },
     shatter: () => { tone(1500, 0.14, 'triangle', 0.06, 0.3); tone(2100, 0.1, 'square', 0.03, 0.4, 0.04); tone(320, 0.7, 'sawtooth', 0.04, 0.5, 0.15); },
     sizzle: () => { tone(900, 0.5, 'sawtooth', 0.03, 0.3); tone(240, 0.5, 'square', 0.03, 0.5, 0.05); },
+    win: () => { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, i > 3 ? 0.3 : 0.16, 'triangle', 0.07, 1, i * 0.13)); tone(262, 0.9, 'sine', 0.05, 1, 0.5); },
     clear: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'triangle', 0.06, 1, i * 0.1)),
   };
   const isSmall = () => W < 560;
@@ -2379,6 +2388,7 @@ body { margin: 0; }
     g.font = '800 168px Gabarito, sans-serif'; g.lineWidth = 16; g.strokeText(String(game.score), 600, 365); g.fillStyle = T.cream; g.fillText(String(game.score), 600, 365);
     g.font = '600 30px Gabarito, sans-serif'; g.lineWidth = 7; const st = `${game.stats.wisps} wisps   ${game.stats.boxes} powerups   ${game.stats.catches} enemies caught`; g.strokeText(st, 600, 470); g.fillStyle = T.cream; g.fillText(st, 600, 470);
     g.font = '600 26px "DM Mono", monospace'; g.lineWidth = 6; g.strokeText('tinyminotaur.co/lantern-labyrinth', 600, 515); g.fillStyle = T.accent; g.fillText('tinyminotaur.co/lantern-labyrinth', 600, 515);
+    if (won) { g.save(); g.translate(170, 300); g.strokeStyle = T.accent; g.globalAlpha = 0.55; g.lineWidth = 8; g.lineCap = 'round'; for (let i = 0; i < 16; i++) { g.rotate(6.283 / 16); g.beginPath(); g.moveTo(120, 0); g.lineTo(i % 2 ? 160 : 200, 0); g.stroke(); } g.restore(); }
     minoShape(g, 170, 322, 54, false, 0, 0, { colors: { fur: T.ink, furD: T.ink, horn: T.ink, muzzle: T.cream, nose: T.ink, suit: T.ink, shirt: T.cream, tie: '#c0452a', lapel: T.cream, eye: T.cream, glint: T.ink, hand: T.ink },
       paint(c, fn, col, kind) { fn(); c.fillStyle = col; c.fill(); if (kind === 'head' || kind === 'tuft' || kind === 'suit' || kind === 'horn' || kind === 'ear') { c.strokeStyle = T.cream; c.lineWidth = 2; c.stroke(); } if (kind === 'muzzle') { c.strokeStyle = T.ink; c.lineWidth = 3; c.stroke(); } },
       line(c, fn, col, w) { fn(); c.strokeStyle = col; c.lineWidth = w; c.stroke(); } });
@@ -2404,9 +2414,15 @@ body { margin: 0; }
   }
 
   function winGame() {
-    game.state = 'won';
-    const isBest = saveBest();
-    showCard(`<h2>The Minotaur is free!</h2><div class="big">${game.score}</div><p>You led him out of every labyrinth. All ${GOALS.length} floors cleared. ${isBest ? 'New best.' : 'Best: ' + best}</p><button data-act="play">Play again</button><div class="btnrow"><button class="alt" data-act="share">Share result</button><button class="alt" data-act="save">Save image</button></div>`);
+    game.state = 'won'; game.winT0 = game.clock;
+    const isBest = saveBest(), st = game.stats;
+    sfx.win();
+    for (let i = 0; i < 4; i++) setTimeout(() => burst(rnd(0, W), rnd(0, H * 0.5), pick(['#ffd36a', '#ff7ab6', '#5eead4']), 22, 260), i * 350);
+    showCard(`<div class="escape"><canvas data-s="escape"></canvas><div class="escbody"><h2>The Minotaur is free!</h2><p class="story">With your lantern to guide him, he walked out of every labyrinth Minos could build, and the sea is open ahead.</p>
+      <div class="big">${game.score}</div>
+      <ul class="stats"><li><b>${st.wisps}</b>spirit-flames</li><li><b>${st.boxes}</b>gifts of the gods</li><li><b>${st.catches}</b>enemies devoured</li><li><b>${game.lives}</b>lives left</li></ul>
+      <p>${isBest ? 'New best score.' : 'Best: ' + best}</p><button data-act="play">Play again</button><div class="btnrow"><button class="alt" data-act="share">Share result</button><button class="alt" data-act="save">Save image</button></div></div></div>`);
+    overlay.querySelector('.card').classList.add('escapecard'); renderIntro(true);
   }
   function endGame() {
     game.state = 'over';
@@ -2453,8 +2469,51 @@ body { margin: 0; }
     wardens: { w: 240, h: 150, draw(E, c2) { const T = theme(); E.mino(176, 98, false); E.warden(58, 70, 0, 176, 98); E.warden(112, 104, 1, 176, 98); arrowTo(c2, 90, 92, 142, 98, T.accent); } },
     relicRow: null,
   };
+  /* ---------- the escape scene: dawn over the sea, the labyrinth gate flung open, the Minotaur walking free ---------- */
+  function escapeSpec() {
+    return { w: 560, h: 300, cs: 62, draw(E, c, st, w, h) {
+      const t = game.clock - (game.winT0 || 0), T = theme(), p = clamp(t / 3.4, 0, 1), e = 1 - Math.pow(1 - p, 3), HZ = 188;
+      // sky: night turning to dawn
+      let g = c.createLinearGradient(0, 0, 0, HZ); g.addColorStop(0, '#231d4a'); g.addColorStop(0.55, '#b4467a'); g.addColorStop(1, '#ffc27a'); c.fillStyle = g; c.fillRect(0, 0, w, HZ);
+      c.fillStyle = '#fff'; for (let i = 0; i < 22; i++) { c.globalAlpha = (0.3 + 0.7 * Math.abs(Math.sin(t * 1.5 + i))) * (1 - e * 0.8); c.fillRect((i * 97) % w, (i * 53) % 90, 1.6, 1.6); } c.globalAlpha = 1;
+      // the sun rises behind the sea
+      const sx = 420, sy = HZ - 8 - 60 * e; g = c.createRadialGradient(sx, sy, 10, sx, sy, 170); g.addColorStop(0, 'rgba(255,236,170,0.95)'); g.addColorStop(1, 'rgba(255,200,120,0)'); c.fillStyle = g; c.fillRect(0, 0, w, HZ);
+      c.save(); c.beginPath(); c.rect(0, 0, w, HZ); c.clip(); c.translate(sx, sy); c.rotate(t * 0.15); c.strokeStyle = 'rgba(255,240,180,0.55)'; c.lineWidth = 6; for (let i = 0; i < 18; i++) { c.rotate(6.283 / 18); c.beginPath(); c.moveTo(46, 0); c.lineTo(i % 2 ? 90 : 120, 0); c.stroke(); } c.fillStyle = '#fff3b8'; c.beginPath(); c.arc(0, 0, 34, 0, 6.283); c.fill(); c.restore();
+      // sea with glitter and a sail
+      g = c.createLinearGradient(0, HZ, 0, h); g.addColorStop(0, '#3a8fb4'); g.addColorStop(1, '#14425f'); c.fillStyle = g; c.fillRect(0, HZ, w, h - HZ);
+      c.strokeStyle = 'rgba(255,255,255,0.4)'; c.lineWidth = 1.6; c.lineCap = 'round'; for (let r = 0; r < 5; r++) { c.beginPath(); for (let x = 0; x <= w; x += 8) { const y = HZ + 16 + r * 20 + Math.sin(x * 0.045 + t * 1.6 + r * 1.7) * 2.5; x ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); }
+      c.fillStyle = 'rgba(255,240,180,0.5)'; for (let i = 0; i < 9; i++) c.fillRect(sx - 34 + ((i * 29 + t * 20) % 70), HZ + 6 + i * 7, 12 + (i % 3) * 8, 2);
+      const bx = 470 - Math.min(t, 8) * 6, by = HZ + 22 + Math.sin(t * 1.8) * 2; c.save(); c.translate(bx, by); c.rotate(Math.sin(t * 1.8) * 0.04);
+      c.fillStyle = '#6a3a22'; c.beginPath(); c.moveTo(-26, 0); c.lineTo(26, 0); c.lineTo(18, 11); c.lineTo(-18, 11); c.closePath(); c.fill(); c.strokeStyle = '#3a2214'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -38); c.stroke();
+      c.fillStyle = '#fff6e0'; c.beginPath(); c.moveTo(2, -36); c.lineTo(24, -6); c.lineTo(2, -6); c.closePath(); c.fill(); c.fillStyle = '#e0553c'; c.beginPath(); c.moveTo(0, -38); c.lineTo(-14, -34); c.lineTo(0, -30); c.closePath(); c.fill(); c.restore();
+      // the ground, and the labyrinth's wall with its gate flung open
+      c.fillStyle = '#d6b078'; c.fillRect(0, HZ, 330, 70); c.fillStyle = '#c29a5e'; c.fillRect(0, HZ + 54, 330, 16); c.fillStyle = 'rgba(255,255,255,0.7)'; for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse(334 + Math.sin(t * 2 + i) * 3, HZ + 6 + i * 11, 6, 3, 0, 0, 6.283); c.fill(); }
+      c.fillStyle = '#5b5578'; c.fillRect(0, 36, 168, HZ + 34 - 36); c.strokeStyle = '#46405f'; c.lineWidth = 2; for (let y = 36; y < HZ + 34; y += 26) { c.beginPath(); c.moveTo(0, y); c.lineTo(168, y); c.stroke(); for (let x = ((y / 26) % 2) * 22; x < 168; x += 44) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + 26); c.stroke(); } }
+      c.fillStyle = '#5b5578'; c.beginPath(); c.moveTo(0, 36); c.lineTo(168, 36); c.lineTo(168, 18); c.lineTo(0, 18); c.closePath(); c.fill();
+      c.fillStyle = '#1a1226'; c.beginPath(); c.moveTo(48, HZ + 34); c.lineTo(48, 122); c.quadraticCurveTo(84, 78, 120, 122); c.lineTo(120, HZ + 34); c.closePath(); c.fill();
+      c.fillStyle = '#8a6a44'; c.save(); c.translate(120, 0); c.transform(1, 0, 0, 1, 0, 0); c.beginPath(); c.moveTo(0, 124); c.lineTo(34, 112); c.lineTo(34, HZ + 22); c.lineTo(0, HZ + 34); c.closePath(); c.fill(); c.restore();
+      c.strokeStyle = '#a8c06a'; c.lineWidth = 3; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(20 + i * 38, 18); c.quadraticCurveTo(26 + i * 38 + Math.sin(t * 2 + i) * 4, 70, 14 + i * 38, 110); c.stroke(); }
+      [30, 138].forEach((tx, i) => { c.fillStyle = '#ffb347'; c.beginPath(); flame(c, tx, 108, 7, t * 2, i * 2); c.fill(); c.fillStyle = '#fff3c0'; c.beginPath(); flame(c, tx, 110, 3.5, t * 2, i * 2); c.fill(); });
+      // the ones left behind
+      E.warden(50, HZ + 12 + Math.abs(Math.sin(t * 5)) * -3, 0, 330, 205); E.warden(86, HZ + 22, 1, 330, 205);
+      E.ghost(98, 96 + Math.sin(t * 2) * 5, 330, 205);
+      c.save(); c.font = '700 15px Gabarito, sans-serif'; c.textAlign = 'center'; c.lineWidth = 4; c.lineJoin = 'round'; c.strokeStyle = '#1a1226'; c.fillStyle = '#ffd9d0'; c.strokeText('Noooo!', 150, 60 + Math.sin(t * 6) * 2); c.fillText('Noooo!', 150, 60 + Math.sin(t * 6) * 2); c.restore();
+      // the Minotaur walks out into the light with the lantern held high
+      const mx = 150 + e * 168, my = 214 - (p < 1 ? Math.abs(Math.sin(t * 9)) * 5 : Math.sin(t * 3) * 1.5);
+      E.mino(mx, my, true); E.guide(mx + 2, my - 62 - (p < 1 ? 0 : Math.sin(t * 3) * 2));
+      // gulls
+      c.strokeStyle = '#2a2040'; c.lineWidth = 2; c.lineCap = 'round'; [[300, 62], [350, 40], [392, 74]].forEach(([bx2, by2], i) => { const x = ((bx2 + t * 18 + i * 40) % (w + 60)) - 30, y = by2 + Math.sin(t * 2 + i) * 6, f = Math.sin(t * 8 + i) * 4; c.beginPath(); c.moveTo(x - 9, y + f); c.quadraticCurveTo(x - 4, y - 4, x, y); c.quadraticCurveTo(x + 4, y - 4, x + 9, y + f); c.stroke(); });
+      // confetti
+      const cols = [T.accent, '#ff7ab6', '#5eead4', '#c39bff', '#ffd36a', '#ffffff'];
+      for (let i = 0; i < 70; i++) { const sp = 0.5 + (i % 7) * 0.12, y = ((t * 38 * sp + i * 41) % (h + 20)) - 10, x = (i * 83.7 + Math.sin(t * 1.4 * sp + i) * 22) % w; c.save(); c.translate(x, y); c.rotate(t * 3 * sp + i); c.fillStyle = cols[i % cols.length]; c.globalAlpha = 0.95; c.fillRect(-3, -1.6, 6, 3.2); c.restore(); }
+      // the headline
+      const tp = clamp((t - 0.2) / 0.6, 0, 1), sc = 0.6 + 0.4 * easeOutBack(tp); c.save(); c.translate(w / 2, 34); c.scale(sc, sc); c.globalAlpha = tp; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.font = '800 38px Cinzel, Georgia, serif'; c.lineWidth = 9; c.strokeStyle = '#2a1030'; c.strokeText('FREE!', 0, 0); c.fillStyle = '#ffe27a'; c.fillText('FREE!', 0, 0); c.restore();
+    } };
+  }
+
   function sampleFor(el) {
     const s = el.dataset.s;
+    if (s === 'escape') return escapeSpec();
     if (s === 'relic') return { w: 120, h: 96, cs: 48, draw(E) { E.relic(60, 48, el.dataset.k); } };
     if (s === 'goal1') return { w: 440, h: 54, draw(E, c2, st, w, h) { const T = theme(), n = 22, u = 3.2, len = w - 24, uw = len / n, g = { n, ti: 0, u, len, y0: h / 2 - 2.5 * u, mid: h / 2, units: n, uw }; c2.save(); c2.translate(12 - TRACK_X0, 0); st.track.rail(g, T); for (let j = 0; j < n; j++) st.track.unit(g, j, TRACK_X0 + j * uw, j < 14 ? 1 : 0, 0, T); c2.restore(); } };
     if (s === 'goal2') return { w: 440, h: 54, draw(E, c2, st, w, h) { const T = theme(), u = 3.2, g = { u, len: w - 24, y0: h / 2 - 2.5 * u, mid: h / 2 }; c2.save(); c2.translate(12 - TRACK_X0, 0); st.track.rail(g, T); c2.restore(); [0, 1, 2].forEach(j => st.track.icon('boo', w / 2 + (j - 1) * 50, h / 2, 9, j < 2, 0, game.clock + j, T, g)); } };
@@ -2462,8 +2521,9 @@ body { margin: 0; }
   }
   let introTick = 0;
   function renderIntro(force) {
-    if (overlay.hidden || !overlay.querySelector('.intro')) return;
-    if (!force && (++introTick & 1) && introTick % 4 !== 0) return;
+    const esc = !overlay.hidden && overlay.querySelector('.escape');
+    if (overlay.hidden || (!esc && !overlay.querySelector('.intro'))) return;
+    if (!force && ((esc && (++introTick & 1)) || (!esc && (++introTick & 1) && introTick % 4 !== 0))) return;
     overlay.querySelectorAll('canvas[data-s]').forEach(c => { const sp = sampleFor(c); if (sp) drawSample(c, sp); });
   }
   function intro() {
