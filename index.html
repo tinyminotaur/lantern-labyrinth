@@ -61,7 +61,7 @@ h1 { margin: 0; font-family: var(--font-title, "Cinzel"), var(--font-display); f
   cursor: none; touch-action: none; user-select: none; -webkit-user-select: none;
 }
 #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; pointer-events: none; }
+#overlay { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr); place-items: center; padding: 12px; pointer-events: none; }
 #overlay[hidden] { display: none; }
 .card {
   pointer-events: auto; cursor: default; max-width: 360px; text-align: center;
@@ -111,8 +111,42 @@ legend { padding: 0 0 8px; font: 500 11px var(--font-mono); text-transform: uppe
 #hLives .gone { opacity: 0.2; }
 .card .btnrow { display: flex; gap: 8px; }
 .card .btnrow button { flex: 1; }
+.card.introcard { max-width: min(800px, 100%); width: 100%; max-height: 100%; padding: 0; gap: 0; overflow-y: auto; overscroll-behavior: contain; text-align: left; background: rgba(19, 15, 31, 0.97); }
+.intro { display: flex; flex-direction: column; }
+.card .intro > * { margin-inline: 18px; }
+.ihead { margin-top: 18px; }
+.ihead h2 { font-size: 30px; }
+.ihead p { margin-top: 6px; font-size: 14px; }
+.intro h3 { margin: 18px 18px 8px; font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--dim); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 168px), 1fr)); gap: 12px; margin-top: 14px; }
+.tile { margin-block: 0; margin-inline: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tile canvas, .relic canvas { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--line); aspect-ratio: 240 / 150; }
+.tile.wide { margin-inline: 18px; gap: 6px; }
+.tile.wide canvas { aspect-ratio: 440 / 54; }
+.tile figcaption { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.tile figcaption b { color: var(--bone); font-size: 15px; font-weight: 600; }
+.relics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 10px; }
+.relic { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.relic canvas { aspect-ratio: 120 / 96; }
+.relic b { font-size: 14px; font-weight: 600; }
+.relic small { font: 400 11.5px/1.4 var(--font-mono); color: var(--dim); }
+.card .intro > .keys { margin-block: 14px 0; text-align: left; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.keys b { color: var(--bone); font-weight: 600; }
+.introfoot { position: sticky; bottom: 0; margin: 14px 0 0; padding: 12px 18px 16px; display: flex; flex-direction: column; gap: 10px; background: linear-gradient(to bottom, rgba(19, 15, 31, 0), rgba(19, 15, 31, 0.98) 22%); }
+.pick { display: flex; flex-direction: column; gap: 6px; }
+.plabel { font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--dim); }
+.styles2 { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.opt2 { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; background: rgba(255, 255, 255, 0.02); }
+.opt2:has(input:checked) { border-color: var(--torch); background: rgba(255, 255, 255, 0.07); }
+.opt2:has(input:focus-visible) { outline: 2px solid var(--bone); outline-offset: 2px; }
+.opt2 input { position: absolute; opacity: 0; pointer-events: none; }
+.opt2 .sw { display: flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.opt2 .sw i { display: block; width: 9px; height: 26px; }
+.opt2 .nm { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.card.introcard button[data-act="play"] { width: 100%; padding: 13px 18px; font-size: 18px; }
 .card button.alt { background: transparent; color: var(--bone); border: 1px solid var(--line); padding: 9px 12px; font-size: 14px; }
 @media (max-width: 560px), (max-height: 640px) { #legend { display: none; } }
+@media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .tile figcaption { font-size: 12px; } .tile figcaption b { font-size: 14px; } .relics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ihead h2 { font-size: 24px; } .card .intro > * { margin-inline: 14px; } .intro h3 { margin-inline: 14px; } .introfoot { padding-inline: 14px; } }
 button.mute {
   font: 500 11px var(--font-mono); color: var(--dim); background: transparent; border: 1px solid var(--line);
   border-radius: 6px; padding: 3px 8px; align-self: center; letter-spacing: 0.04em;
@@ -224,7 +258,7 @@ body { margin: 0; }
 
   const arena = document.getElementById('arena');
   const cv = document.getElementById('cv');
-  const ctx = cv.getContext('2d');
+  let ctx = cv.getContext('2d');
   const overlay = document.getElementById('overlay');
   const $ = id => document.getElementById(id);
   const hLevel = $('hLevel'), hScore = $('hScore'), hLives = $('hLives'), statusEl = $('status'), gTitle = $('gTitle'), gProg = $('gProg');
@@ -1511,6 +1545,9 @@ body { margin: 0; }
     };
     return {
       font: '"Press Start 2P"', ready: false, build,
+      draw: { me: mePx, spook: spookPx, warden: wardenPx, wisps, relic, guide: guidePx },
+      sampleBegin(w, h) { const prev = { L, P, LW, LH }; P = 4; LW = Math.ceil(w / P) + 1; LH = Math.ceil(h / P) + 1; const c = document.createElement('canvas'); c.width = LW; c.height = LH; L = c.getContext('2d'); return { prev, c }; },
+      sampleEnd(tok, c2, w, h) { c2.imageSmoothingEnabled = false; c2.drawImage(tok.c, 0, 0, LW * P, LH * P); c2.imageSmoothingEnabled = true; L = tok.prev.L; P = tok.prev.P; LW = tok.prev.LW; LH = tok.prev.LH; },
       render(T) {
         ctx.imageSmoothingEnabled = false; ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         L.clearRect(0, 0, LW, LH);
@@ -1709,7 +1746,7 @@ body { margin: 0; }
         ctx.restore(); });
     }
     return {
-      font: '"Rubik Mono One"', ready: false, build,
+      font: '"Rubik Mono One"', ready: false, build, draw: { me: meR, spook: spookR, warden: wardenR, wisps, relic, guide: guideR },
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyR(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenR(g))); withDeath(spook, spook.x, spook.y, () => spookR(spook)); withDeath(me, me.x, me.y, meR); partsR(); guideR(); drawTracks();
@@ -1887,7 +1924,7 @@ body { margin: 0; }
         ctx.restore(); });
     }
     return {
-      font: 'Fredoka', ready: false, build,
+      font: 'Fredoka', ready: false, build, draw: { me: meP, spook: spookP, warden: wardenP, wisps, relic, guide: guideP },
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyP(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenP(g))); withDeath(spook, spook.x, spook.y, () => spookP(spook)); withDeath(me, me.x, me.y, meP); partsP(); guideP(); drawTracks();
@@ -2064,7 +2101,7 @@ body { margin: 0; }
         ctx.restore(); });
     }
     return {
-      font: 'Caveat', ready: false, build,
+      font: 'Caveat', ready: false, build, draw: { me: meW, spook: spookW, warden: wardenW, wisps, relic, guide: guideW },
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyW(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenW(g))); withDeath(spook, spook.x, spook.y, () => spookW(spook)); withDeath(me, me.x, me.y, meW); partsW(); guideW(); drawTracks();
@@ -2103,6 +2140,7 @@ body { margin: 0; }
 
   STYLES.greek = {
     font: 'Cinzel',
+    draw: { me: drawMe, spook: drawSpook, warden: drawWarden, wisps: drawDots, relic: drawBox, guide: drawGuide },
     build: buildStatic,
     banner: drawBanner,
     render(T) {
@@ -2177,6 +2215,7 @@ body { margin: 0; }
     styleName = name; try { localStorage.setItem('lantern-style', name); } catch (e) {}
     if (walls) applyTheme();
     styleList.querySelectorAll('input').forEach(i => (i.checked = i.value === name));
+    overlay.querySelectorAll('#introStyles input').forEach(i => (i.checked = i.value === name));
   }
   function openSettings(open) {
     settingsEl.hidden = !open; gearBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); game.paused = open || game.pausedByCard;
@@ -2284,12 +2323,79 @@ body { margin: 0; }
     const isBest = saveBest();
     showCard(`<h2>Out of lives</h2><div class="big">${game.score}</div><p>You made it to floor ${game.level} of ${GOALS.length}. ${isBest ? 'New best.' : 'Best: ' + best}</p><button data-act="play">Play again</button><div class="btnrow"><button class="alt" data-act="share">Share result</button><button class="alt" data-act="save">Save image</button></div>`);
   }
+  /* ---------- startup: an illustrated tour that draws the real sprites in the style you pick ---------- */
+  const SAMPLE_BG = { greek: '#cf7632', pixel: '#2b2f4a', riso: '#f2ebd9', paper: '#fbf3df', watercolor: '#f5eedb' };
+  function arrowTo(c, x1, y1, x2, y2, col) {
+    const a = Math.atan2(y2 - y1, x2 - x1); c.save(); c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2.4; c.lineCap = 'round'; c.setLineDash([2, 6]);
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2 - Math.cos(a) * 6, y2 - Math.sin(a) * 6); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.moveTo(x2, y2); c.lineTo(x2 - Math.cos(a - 0.45) * 11, y2 - Math.sin(a - 0.45) * 11); c.lineTo(x2 - Math.cos(a + 0.45) * 11, y2 - Math.sin(a + 0.45) * 11); c.closePath(); c.fill(); c.restore();
+  }
+  // draw one sample canvas by pointing the real renderers at it for a moment
+  function drawSample(cv2, spec) {
+    const st = S(), w = spec.w, h = spec.h, d = Math.min(window.devicePixelRatio || 1, 2);
+    if (cv2.width !== Math.round(w * d)) { cv2.width = Math.round(w * d); cv2.height = Math.round(h * d); }
+    const c2 = cv2.getContext('2d'); c2.setTransform(d, 0, 0, d, 0, 0); c2.imageSmoothingEnabled = true; c2.clearRect(0, 0, w, h);
+    c2.fillStyle = SAMPLE_BG[styleName] || '#ccc'; c2.fillRect(0, 0, w, h);
+    const keep = { ctx, cs, W, H, me, spook, ghosts, dots, boxes, decoy, parts, hazard, cols, rows, ox, oy, px_: ptr.x, py_: ptr.y, hover: game.hover, invuln: game.invuln, dying: game.state };
+    ctx = c2; cs = spec.cs || 48; W = w; H = h; cols = 8; rows = 1; ox = 0; oy = h / 2 - cs / 2;
+    ghosts = []; dots = []; boxes = []; parts = []; decoy = null; hazard = { vents: [], currents: new Map(), phase: [] };
+    const ghost0 = { x: -999, y: -999, vx: 0, vy: 0, eaten: 99, stun: 0, home: 0, dead: null, spawnT: 0 };
+    spook = ghost0; me = { x: -999, y: -999, A: 0, B: 0, t: 0, dir: null, face: 1, dead: null, spawnT: 0 }; game.hover = 0; game.invuln = 0;
+    const tok = st.sampleBegin ? st.sampleBegin(w, h) : null;
+    const E = {
+      mino(x, y, glad) { me = { x, y, A: 0, B: 0, t: 0, dir: null, face: 1, dead: null, spawnT: 0 }; game.hover = glad ? 1 : 0; if (glad) { ptr.x = x; ptr.y = y; } st.draw.me(); game.hover = 0; me = { x: -999, y: -999, A: 0, B: 0, t: 0, dir: null, face: 1, dead: null, spawnT: 0 }; },
+      guide(x, y) { ptr.x = x; ptr.y = y; st.draw.guide(); },
+      ghost(x, y, tx, ty) { ptr.x = tx == null ? x : tx; ptr.y = ty == null ? y : ty; const g = { x, y, vx: 0, vy: 0, eaten: 0, stun: 0, home: 0, dead: null, spawnT: 0 }; spook = g; st.draw.spook(g); spook = ghost0; },
+      warden(x, y, k, tx, ty) { me = { x: tx == null ? x : tx, y: ty == null ? y : ty, A: 0, B: 0, t: 0, dir: null, face: 1, dead: null, spawnT: 0 }; const g = { x, y, k, mode: 'chase', mt: 3, stun: 0, eaten: 0, dead: null, spawnT: 0, emote: null }; st.draw.warden(g); me = { x: -999, y: -999, A: 0, B: 0, t: 0, dir: null, face: 1, dead: null, spawnT: 0 }; },
+      wisps(list) { dots = list.map((p, i) => ({ i, x: p[0], y: p[1], on: true, t: 0 })); st.draw.wisps(theme()); dots = []; },
+      relic(x, y, type) { ox = x - cs / 2; oy = y - cs / 2; st.draw.relic({ i: 0, type, appear: 1, active: true }); ox = 0; oy = h / 2 - cs / 2; },
+    };
+    try { c2.save(); spec.draw(E, c2, st, w, h); c2.restore(); } finally {
+      if (tok) st.sampleEnd(tok, c2, w, h);
+      ctx = keep.ctx; cs = keep.cs; W = keep.W; H = keep.H; me = keep.me; spook = keep.spook; ghosts = keep.ghosts; dots = keep.dots; boxes = keep.boxes; decoy = keep.decoy; parts = keep.parts; hazard = keep.hazard;
+      cols = keep.cols; rows = keep.rows; ox = keep.ox; oy = keep.oy; ptr.x = keep.px_; ptr.y = keep.py_; game.hover = keep.hover; game.invuln = keep.invuln;
+    }
+  }
+  const SAMPLES = {
+    you: { w: 240, h: 150, draw(E, c2, st, w, h) { const T = theme(); E.mino(62, 96, false); arrowTo(c2, 92, 80, 160, 54, T.accent); E.guide(190, 48); } },
+    wisps: { w: 240, h: 150, draw(E, c2) { E.wisps([[140, 52], [176, 52], [212, 52], [140, 96], [176, 96], [212, 96], [158, 74], [194, 74]].map(p => [p[0], p[1]])); E.mino(62, 86, false); arrowTo(c2, 96, 90, 128, 90, theme().accent); } },
+    ghost: { w: 240, h: 150, draw(E, c2) { const T = theme(); E.guide(60, 82); E.ghost(190, 70, 60, 82); arrowTo(c2, 160, 74, 96, 80, T.accent); c2.save(); c2.strokeStyle = 'rgba(0,0,0,0.35)'; c2.lineWidth = 7; c2.lineCap = 'round'; c2.beginPath(); c2.moveTo(122, 30); c2.lineTo(122, 120); c2.stroke(); c2.restore(); } },
+    wardens: { w: 240, h: 150, draw(E, c2) { const T = theme(); E.mino(176, 98, false); E.warden(58, 70, 0, 176, 98); E.warden(112, 104, 1, 176, 98); arrowTo(c2, 90, 92, 142, 98, T.accent); } },
+    relicRow: null,
+  };
+  function sampleFor(el) {
+    const s = el.dataset.s;
+    if (s === 'relic') return { w: 120, h: 96, cs: 48, draw(E) { E.relic(60, 48, el.dataset.k); } };
+    if (s === 'goal1') return { w: 440, h: 54, draw(E, c2, st, w, h) { const T = theme(), n = 22, u = 3.2, len = w - 24, uw = len / n, g = { n, ti: 0, u, len, y0: h / 2 - 2.5 * u, mid: h / 2, units: n, uw }; c2.save(); c2.translate(12 - TRACK_X0, 0); st.track.rail(g, T); for (let j = 0; j < n; j++) st.track.unit(g, j, TRACK_X0 + j * uw, j < 14 ? 1 : 0, 0, T); c2.restore(); } };
+    if (s === 'goal2') return { w: 440, h: 54, draw(E, c2, st, w, h) { const T = theme(), u = 3.2, g = { u, len: w - 24, y0: h / 2 - 2.5 * u, mid: h / 2 }; c2.save(); c2.translate(12 - TRACK_X0, 0); st.track.rail(g, T); c2.restore(); [0, 1, 2].forEach(j => st.track.icon('boo', w / 2 + (j - 1) * 50, h / 2, 9, j < 2, 0, game.clock + j, T, g)); } };
+    return SAMPLES[s];
+  }
+  let introTick = 0;
+  function renderIntro(force) {
+    if (overlay.hidden || !overlay.querySelector('.intro')) return;
+    if (!force && (++introTick & 1)) return;
+    overlay.querySelectorAll('canvas[data-s]').forEach(c => { const sp = sampleFor(c); if (sp) drawSample(c, sp); });
+  }
   function intro() {
-    showCard(`<h2>Lantern Labyrinth</h2>
-      <p class="goal">Clear <b>6 floors</b>. Each floor has a goal, like eating wisps or opening boxes. Reach it before you lose all <b>5 lives</b>.</p>
-      <p>You are the <b>guide</b>, the glowing lantern that leads the minotaur. Two enemies, two targets: the <b>ghost</b> floats through walls after <b>you</b>, and <b>wardens</b> chase the <b>minotaur</b> through the corridors. Either one catching its target costs a life.</p>
-      <p>The minotaur follows your guide but can't pass walls, so keep moving away from the ghost. Grab powerups for special abilities.</p>
-      <p>On a phone, drag your finger. On a keyboard, use the arrow keys or WASD. P pauses.</p><button>Play</button>`);
+    const tile = (id, title, cap) => `<figure class="tile"><canvas data-s="${id}"></canvas><figcaption><b>${title}</b><span>${cap}</span></figcaption></figure>`;
+    showCard(`<div class="intro">
+      <div class="ihead"><h2>Lantern Labyrinth</h2><p>Guide a tiny minotaur through six labyrinths. Eat every wisp you need, and stay out of reach. Here is who you will meet.</p></div>
+      <div class="tiles">
+        ${tile('you', 'You and your guide', 'Drag your mouse or finger to place your lantern. The minotaur follows it through the aisles.')}
+        ${tile('wisps', 'Wisps', 'Eat them to reach each floor’s goal. They drift toward you when you are close.')}
+        ${tile('ghost', 'The ghost', 'It floats straight through walls after your guide. Keep the lantern out of its reach.')}
+        ${tile('wardens', 'The wardens', 'A hoplite and a satyr hunt the minotaur through the aisles. Do not get caught.')}
+      </div>
+      <h3>Powerups</h3>
+      <div class="relics">${KEYS.map(k => `<div class="relic"><canvas data-s="relic" data-k="${k}"></canvas><b>${TYPES[k].name}</b><small>${TYPES[k].d}</small></div>`).join('')}</div>
+      <h3>Every floor has a goal</h3>
+      <figure class="tile wide"><canvas data-s="goal1"></canvas><figcaption><span>Wisps fill the painted border as you eat them. Eat 50 to clear floor 1.</span></figcaption><canvas data-s="goal2"></canvas><figcaption><span>Other floors ask for powerups, or for enemies caught with Boo or fooled with a Decoy.</span></figcaption></figure>
+      <p class="keys"><b>Mouse</b> or <b>finger</b>: drag to guide. <b>Arrow keys</b> or <b>WASD</b> also work. <b>P</b> pauses. You have 5 lives, and two floors give one back.</p>
+      <div class="introfoot"><div class="pick"><span class="plabel">Choose your look</span><div class="styles2" id="introStyles">${STYLE_ORDER.map(k => `<label class="opt2"><input type="radio" name="introstyle" value="${k}"${k === styleName ? ' checked' : ''}><span class="sw">${STYLE_INFO[k].sw.map(c => `<i style="background:${c}"></i>`).join('')}</span><span class="nm">${STYLE_INFO[k].name}</span></label>`).join('')}</div></div><button data-act="play">Play</button></div>
+    </div>`);
+    overlay.querySelector('.card').classList.add('introcard');
+    overlay.querySelectorAll('#introStyles input').forEach(i => i.addEventListener('change', () => { setStyle(i.value); renderIntro(true); }));
+    renderIntro(true);
   }
 
   /* ---------- input (pointer events: mouse + touch + pen) ---------- */
@@ -2323,7 +2429,7 @@ body { margin: 0; }
       if (Math.abs(arena.clientWidth - W) > 1 || Math.abs(arena.clientHeight - H) > 1 || !walls) {
         if (++sizeWait > 8 || !walls) { resize(); sizeWait = 0; }
       } else sizeWait = 0;
-      if (walls) { if (!game.paused) update(dt); draw(); }
+      if (walls) { if (!game.paused) update(dt); draw(); renderIntro(); }
     } catch (e) { console.error(e); }
     requestAnimationFrame(frame);
   }
