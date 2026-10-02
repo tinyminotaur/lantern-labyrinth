@@ -537,7 +537,7 @@ body { margin: 0; }
     if (kb.on) { steerKeys(dt, speed); return; }
     // the target cell only changes once your guide is clearly inside a new cell, so it doesn't flicker between two cells on a boundary
     if (me.tc == null || Math.abs(ptr.x - px(me.tc)) > cs * 0.62 || Math.abs(ptr.y - py(me.tc)) > cs * 0.62) me.tc = snapActive(cellAt(ptr.x, ptr.y));
-    const target = me.tc, dist = bfs(target);
+    const target = me.tc, dist = bfsMe(target);
     const dirTo = (a, b) => { for (let d = 0; d < 4; d++) if (dirNb(a, d) === b) return d; return null; };
     const pickDir = () => {
       const here = dist[me.A];
@@ -640,13 +640,37 @@ body { margin: 0; }
   }
 
   /* ---------- floor twists: lava vents (Forge), currents (Tide), phasing walls (Void) ---------- */
+  // distance field for the minotaur that treats currents as one-way: you can only leave a current cell along its current
+  function bfsMe(src) {
+    if (!hazard.currents.size) return bfs(src);
+    const dist = new Int16Array(cols * rows).fill(-1), q = [src]; dist[src] = 0;
+    for (let h = 0; h < q.length; h++) {
+      const v = q[h];
+      for (let d = 0; d < 4; d++) {
+        if (walls[v] & DIRS[d][2]) continue;
+        const u = dirNb(v, d); if (u < 0 || dist[u] >= 0) continue;
+        const c = hazard.currents.get(u); if (c != null && dirNb(u, c) !== v) continue;
+        dist[u] = dist[v] + 1; q.push(u);
+      }
+    }
+    return dist;
+  }
+  // is every cell still reachable from every other cell once these currents are placed?
+  function currentsKeepMazeOpen(cur) {
+    const n = cols * rows, fwd = new Uint8Array(n), back = new Uint8Array(n);
+    const out = u => { const c = cur.get(u); if (c != null) return [dirNb(u, c)]; const r = []; for (let d = 0; d < 4; d++) if (!(walls[u] & DIRS[d][2])) { const v = dirNb(u, d); if (v >= 0) r.push(v); } return r; };
+    let q = [startCell]; fwd[startCell] = 1; for (let h = 0; h < q.length; h++) out(q[h]).forEach(v => { if (!fwd[v]) { fwd[v] = 1; q.push(v); } });
+    q = [startCell]; back[startCell] = 1;
+    for (let h = 0; h < q.length; h++) { const v = q[h]; for (let d = 0; d < 4; d++) { if (walls[v] & DIRS[d][2]) continue; const u = dirNb(v, d); if (u < 0 || back[u]) continue; const c = cur.get(u); if (c != null && dirNb(u, c) !== v) continue; back[u] = 1; q.push(u); } }
+    return activeList.every(i => fwd[i] && back[i]);
+  }
   function setupHazards() {
     hazard = { vents: [], currents: new Map(), phase: [] };
     const key = theme().twistKey; if (!key) return;
     const d0 = bfs(startCell), taken = new Set([startCell, ...ghosts.map(g => g.home), spook ? spook.home : -1, ...boxes.filter(b => b.active).map(b => b.i)]);
     const pool = activeList.filter(i => !taken.has(i) && d0[i] > 4).sort(() => Math.random() - 0.5);
     if (key === 'lava') pool.slice(0, clamp(Math.round(activeList.length / 16), 3, 8)).forEach(i => hazard.vents.push({ i, ph: rnd(0, 9) }));
-    if (key === 'current') pool.slice(0, Math.round(activeList.length * 0.12)).forEach(i => { const o = [0, 1, 2, 3].filter(d => !(walls[i] & DIRS[d][2])); if (o.length) hazard.currents.set(i, pick(o)); });
+    if (key === 'current') pool.slice(0, Math.round(activeList.length * 0.14)).forEach(i => { const o = [0, 1, 2, 3].filter(d => !(walls[i] & DIRS[d][2])); if (!o.length) return; hazard.currents.set(i, pick(o)); if (!currentsKeepMazeOpen(hazard.currents)) hazard.currents.delete(i); });
     if (key === 'phase') {
       const edge = new Set(bsegs), cand = segs.filter(sg => !edge.has(sg)).sort(() => Math.random() - 0.5).slice(0, clamp(Math.round(segs.length * 0.08), 4, 14));
       cand.forEach(sg => {
@@ -671,7 +695,7 @@ body { margin: 0; }
     if (!hazard.vents.length && !hazard.currents.size && !hazard.phase.length) return;
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     hazard.currents.forEach((d, i) => {
-      const x = px(i), y = py(i), vx = DIRS[d][0], vy = DIRS[d][1], sz = cs * 0.15; ctx.strokeStyle = '#f4f4ff'; ctx.lineWidth = 3.2;
+      const x = px(i), y = py(i), vx = DIRS[d][0], vy = DIRS[d][1], sz = cs * 0.15; ctx.globalAlpha = 0.16; ctx.fillStyle = '#e8f8ff'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - cs * 0.4, y - cs * 0.4, cs * 0.8, cs * 0.8, cs * 0.18) : ctx.rect(x - cs * 0.4, y - cs * 0.4, cs * 0.8, cs * 0.8); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = '#f4f4ff'; ctx.lineWidth = 3.2;
       for (let k = 0; k < 2; k++) { const f = ((t * 0.9 + k * 0.5) % 1) - 0.5, cxp = x + vx * f * cs * 0.7, cyp = y + vy * f * cs * 0.7; ctx.globalAlpha = Math.max(0, 0.8 * (1 - Math.abs(f) * 1.5)); ctx.beginPath(); ctx.moveTo(cxp - vx * sz - vy * sz * 1.3, cyp - vy * sz + vx * sz * 1.3); ctx.lineTo(cxp + vx * sz, cyp + vy * sz); ctx.lineTo(cxp - vx * sz + vy * sz * 1.3, cyp - vy * sz - vx * sz * 1.3); ctx.stroke(); }
     });
     ctx.globalAlpha = 1;
