@@ -106,6 +106,13 @@ legend { padding: 0 0 8px; font: 500 11px var(--font-mono); text-transform: uppe
 .opt b { font-size: 15px; font-weight: 600; }
 .credit { margin: 0; font: 400 12px/1.4 var(--font-mono); color: var(--dim); }
 .credit a { color: var(--torch); }
+#hLives { display: flex; gap: 2px; align-items: center; min-height: 22px; }
+#hLives svg { display: block; }
+#hLives .gone { opacity: 0.2; }
+.card .btnrow { display: flex; gap: 8px; }
+.card .btnrow button { flex: 1; }
+.card button.alt { background: transparent; color: var(--bone); border: 1px solid var(--line); padding: 9px 12px; font-size: 14px; }
+@media (max-width: 560px), (max-height: 640px) { #legend { display: none; } }
 button.mute {
   font: 500 11px var(--font-mono); color: var(--dim); background: transparent; border: 1px solid var(--line);
   border-radius: 6px; padding: 3px 8px; align-self: center; letter-spacing: 0.04em;
@@ -163,6 +170,8 @@ body { margin: 0; }
     <div class="sh-head"><h2 id="setTitle">Settings</h2><button id="setClose" type="button">Done</button></div>
     <div class="row"><span><b>Sound</b><small>Pops, chimes and the floor-clear jingle</small></span>
       <button class="switch" id="sndSwitch" type="button" role="switch" aria-checked="true" aria-label="Sound"><i></i></button><span id="sndState" class="state">On</span></div>
+    <p class="credit">Drag your mouse or finger to guide the minotaur. Arrow keys or WASD work too, and P pauses.</p>
+    <fieldset><legend>Powerups</legend><div class="legend legend2" id="legend2"></div></fieldset>
     <fieldset><legend>Art style</legend><div id="styleList" class="styles"></div></fieldset>
     <p class="credit">A Tiny Minotaur game. <a href="https://tinyminotaur.co" target="_blank" rel="noopener">tinyminotaur.co</a></p>
   </div>
@@ -208,6 +217,7 @@ body { margin: 0; }
       speck: '#3a2468', speck2: '#8a5ad0', page: '#0b0614', accent: '#d8a8ff', line: '#3a2060', open: 0.15 },
   ];
   ['cross', 'circle', 'diamond', 'hourglass', 'wave', 'ziggurat'].forEach((sh, i) => (THEMES[i].shape = sh));
+  [{}, {}, { twist: 'Ice: you keep sliding until you hit a wall' }, { twist: 'Lava vents erupt, so watch for the glow', twistKey: 'lava' }, { twist: 'Currents carry you along', twistKey: 'current' }, { twist: 'Some walls fade out for a few seconds', twistKey: 'phase' }].forEach((o, i) => Object.assign(THEMES[i], o));
   const theme = () => THEMES[(game.level - 1) % THEMES.length];
     // dx, dy, wall bit, opposite wall bit  (N=1, E=2, S=4, W=8)
   const DIRS = [[0, -1, 1, 4], [1, 0, 2, 8], [0, 1, 4, 1], [-1, 0, 8, 2]];
@@ -245,6 +255,7 @@ body { margin: 0; }
     fool: () => tone(900, 0.2, 'sine', 0.06, 0.5),
     clear: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'triangle', 0.06, 1, i * 0.1)),
   };
+  const isSmall = () => W < 560;
   const STYLES = {};
   const STYLE_ORDER = ['greek', 'pixel', 'riso', 'paper', 'watercolor'];
   let styleName = 'greek';
@@ -258,10 +269,11 @@ body { margin: 0; }
   let cols = 0, rows = 0, cs = 48, ox = 0, oy = 0, pr = 12;
   let walls = null, dots = [], boxes = [], ghosts = [], parts = [];
   let me = null, spook = null, decoy = null, startCell = 0, segs = [];
+  let hazard = { vents: [], currents: new Map(), phase: [] };
   const ptr = { x: 0, y: 0, seen: false };
   const game = {
     state: 'idle', level: 1, score: 0, lives: LIVES, prog: freshProg(), clock: 0, ready: 0, invuln: 0, chain: 0, clearT: 0,
-    fx: { treat: 0, mirror: 0, boo: 0, gravity: 0, cold: 0 }, banner: null, shake: 0, flash: 0, hover: 0, paused: false,
+    fx: { treat: 0, mirror: 0, boo: 0, gravity: 0, cold: 0 }, banner: null, shake: 0, flash: 0, hover: 0, paused: false, pausedByCard: false, stats: { wisps: 0, boxes: 0, catches: 0 },
   };
 
   /* ---------- maze ---------- */
@@ -290,6 +302,9 @@ body { margin: 0; }
   function genMaze() {
     const n = cols * rows, T = theme(), f = SHAPES[T.shape] || (() => true), mask = new Uint8Array(n);
     for (let i = 0; i < n; i++) mask[i] = f((cx(i) + 0.5) / cols, (cy(i) + 0.5) / rows) ? 1 : 0;
+    if (cols < 10) { // small grids: thicken the shape by a cell so no arm is a one-cell-wide chokepoint
+      const m2 = mask.slice(); for (let i = 0; i < n; i++) if (mask[i]) for (let d = 0; d < 4; d++) { const j = dirNb(i, d); if (j >= 0) m2[j] = 1; } mask.set(m2);
+    }
     let start = -1, bestR = -1, bestD = 1e9;
     for (let i = 0; i < n; i++) { if (!mask[i]) continue; const d = Math.abs(cx(i) - (cols - 1) / 2); if (cy(i) > bestR || (cy(i) === bestR && d < bestD)) { start = i; bestR = cy(i); bestD = d; } }
     active = new Uint8Array(n);
@@ -308,7 +323,7 @@ body { margin: 0; }
       walls[i] &= ~d[2]; walls[j] &= ~d[3]; seen[j] = 1; stack.push(j);
     }
     // knock out extra walls so there are loops to run around
-    for (let k = 0; k < activeList.length * T.open; k++) {
+    for (let k = 0; k < activeList.length * (T.open + (isSmall() ? 0.12 : 0)); k++) {
       const i = randActive(), d = (Math.random() * 4) | 0, j = dirNb(i, d);
       if (j < 0 || !active[j]) continue;
       walls[i] &= ~DIRS[d][2]; walls[j] &= ~DIRS[d][3];
@@ -378,11 +393,11 @@ body { margin: 0; }
 
   /* ---------- level setup ---------- */
   function setupLevel() {
-    const target = clamp(56 - game.level * 2, 36, 56);
+    const small = isSmall(), target = small ? clamp(42 - game.level, 32, 42) : clamp(56 - game.level * 2, 36, 56);
     vase.u = clamp(target * 0.065, 2.4, 3.6);
-    const mx = 34, my = 21 + vase.u * 5.6 + 22; // a generous margin so your pointer can go beyond the maze
+    const mx = small ? 12 : 34, my = 21 + vase.u * 5.6 + (small ? 10 : 22); // room for the border, and for your pointer to go beyond the maze on desktop
     cols = clamp(Math.floor((W - 2 * mx) / target), 5, 18);
-    rows = clamp(Math.floor((H - 2 * my) / target), 4, 12);
+    rows = clamp(Math.floor((H - 2 * my) / target), 4, small ? 15 : 12);
     cs = Math.min((W - 2 * mx) / cols, (H - 2 * my) / rows);
     ox = (W - cols * cs) / 2; oy = (H - rows * cs) / 2;
     pr = cs * 0.24;
@@ -410,6 +425,7 @@ body { margin: 0; }
     Object.keys(game.fx).forEach(k => (game.fx[k] = 0));
     parts = []; game.ready = 2; game.invuln = 0; game.clearT = 0;
     Object.keys(game.prog).forEach(k => { shown[k] = launched[k] = game.prog[k]; pops[k] = []; }); flyers = [];
+    setupHazards();
     applyTheme();
     game.banner = { text: theme().name, sub: 'Floor ' + game.level + ': ' + GOALS[game.level - 1].text, t: 3.2 };
   }
@@ -461,7 +477,7 @@ body { margin: 0; }
     Object.assign(spook, { x: px(spook.home), y: py(spook.home), vx: 0, vy: 0, eaten: 0, stun: 0 });
     Object.keys(game.fx).forEach(k => (game.fx[k] = 0)); decoy = null;
     game.invuln = 2.4; game.ready = 1.6;
-    game.banner = { text: (kind === 'ghost' ? 'The ghost got your guide!' : 'A warden got you!') + (game.lives === 1 ? ' Last life' : ''), t: 1.8 };
+    game.banner = { text: (kind === 'ghost' ? 'The ghost got your guide!' : kind === 'lava' ? 'The forge burned you!' : 'A warden got you!') + (game.lives === 1 ? ' Last life' : ''), t: 1.8 };
   }
 
   /* ---------- the ghost: floats straight at your guide (the pointer), ignoring walls ---------- */
@@ -477,7 +493,7 @@ body { margin: 0; }
         if (tx < ox + 20 || tx > ox + cols * cs - 20 || ty < oy + 20 || ty > oy + rows * cs - 20) { tx = W / 2; ty = H / 2; }
       } else if (decoy) { tx = decoy.x; ty = decoy.y; }
       s.vx += ((tx - s.x) * 5 - s.vx * 2.6) * dt; s.vy += ((ty - s.y) * 5 - s.vy * 2.6) * dt;
-      const mx = cs * (2.5 + Math.min(game.level, 8) * 0.1) * (fx.boo > 0 ? 0.7 : 1), sp = Math.hypot(s.vx, s.vy);
+      const mx = cs * (2.5 + Math.min(game.level, 8) * 0.1) * (isSmall() ? 0.88 : 1) * (fx.boo > 0 ? 0.7 : 1), sp = Math.hypot(s.vx, s.vy);
       if (sp > mx) { s.vx *= mx / sp; s.vy *= mx / sp; }
     } else { s.vx *= 0.85; s.vy *= 0.85; }
     s.x += s.vx * dt; s.y += s.vy * dt;
@@ -500,8 +516,29 @@ body { margin: 0; }
   // At every intersection it takes the open direction that is closest to your guide *by maze distance* (not by straight-line
   // direction), so a guide that is up-and-to-the-right still lets it turn right when that is the way there.
   const openDir = (i, d) => !(walls[i] & DIRS[d][2]);
+  /* ---------- keyboard play: arrows or WASD, Pac-Man style (keep going until a wall, turn when the way opens) ---------- */
+  const kb = { on: false, dir: null, cx: 0, cy: 0 };
+  const KEYDIR = { ArrowUp: 0, KeyW: 0, ArrowRight: 1, KeyD: 1, ArrowDown: 2, KeyS: 2, ArrowLeft: 3, KeyA: 3 };
+  function steerKeys(dt, speed) {
+    const pickDir = () => {
+      const want = kb.dir; let d = null;
+      if (want != null && openDir(me.A, want)) d = want; else if (want != null && me.dir != null && openDir(me.A, me.dir)) d = me.dir;
+      const cur = hazard.currents.get(me.A); if (cur != null && openDir(me.A, cur)) d = cur;
+      if (d == null) { me.dir = null; return; }
+      me.B = dirNb(me.A, d); me.t = 0; me.dir = d; if (d === 1) me.face = 1; if (d === 3) me.face = -1;
+    };
+    if (me.A === me.B) pickDir();
+    else {
+      if (!theme().slide && kb.dir != null && kb.dir === (me.dir + 2) % 4) { const a = me.A; me.A = me.B; me.B = a; me.t = 1 - me.t; me.dir = kb.dir; }
+      me.t += speed * dt;
+      for (let g = 0; g < 3 && me.t >= 1; g++) { me.A = me.B; me.t = 0; pickDir(); if (me.A === me.B) break; }
+    }
+    const p = lp(me); me.x = p.x; me.y = p.y;
+  }
+
   function steerMe(dt) {
     const speed = 4.4 * (game.fx.treat > 0 ? 1.5 : 1), slide = theme().slide;
+    if (kb.on) { steerKeys(dt, speed); return; }
     // the target cell only changes once your guide is clearly inside a new cell, so it doesn't flicker between two cells on a boundary
     if (me.tc == null || Math.abs(ptr.x - px(me.tc)) > cs * 0.62 || Math.abs(ptr.y - py(me.tc)) > cs * 0.62) me.tc = snapActive(cellAt(ptr.x, ptr.y));
     const target = me.tc, dist = bfs(target);
@@ -522,6 +559,7 @@ body { margin: 0; }
         if (v < bv || (v === bv && score > bs)) { best = d; bv = v; bs = score; }
       }
       if (slide && me.dir != null && openDir(me.A, me.dir) && dist[dirNb(me.A, me.dir)] <= here) best = me.dir; // ice: keep sliding
+      const cur = hazard.currents.get(me.A); if (cur != null && openDir(me.A, cur)) best = cur; // currents carry you along
       if (best < 0) { me.dir = null; return; }
       me.B = dirNb(me.A, best); me.t = 0; me.dir = best; if (best === 1) me.face = 1; if (best === 3) me.face = -1;
     };
@@ -552,7 +590,7 @@ body { margin: 0; }
     return { x: g.start + (idx + 0.5) * g.sw, y: g.mid };
   }
   function bump(key, x, y) {
-    game.prog[key]++;
+    game.prog[key]++; if (key in game.stats) game.stats[key]++;
     if (trackKeys().includes(key)) { const idx = launched[key]++, tg = trackTarget(key, idx); flyers.push({ key, idx, x, y, tx: tg.x, ty: tg.y, t: 0 }); }
     else { shown[key]++; launched[key]++; }
   }
@@ -605,6 +643,61 @@ body { margin: 0; }
     });
   }
 
+  /* ---------- floor twists: lava vents (Forge), currents (Tide), phasing walls (Void) ---------- */
+  function setupHazards() {
+    hazard = { vents: [], currents: new Map(), phase: [] };
+    const key = theme().twistKey; if (!key) return;
+    const d0 = bfs(startCell), taken = new Set([startCell, ...ghosts.map(g => g.home), spook ? spook.home : -1, ...boxes.filter(b => b.active).map(b => b.i)]);
+    const pool = activeList.filter(i => !taken.has(i) && d0[i] > 4).sort(() => Math.random() - 0.5);
+    if (key === 'lava') pool.slice(0, clamp(Math.round(activeList.length / 16), 3, 8)).forEach(i => hazard.vents.push({ i, ph: rnd(0, 9) }));
+    if (key === 'current') pool.slice(0, Math.round(activeList.length * 0.12)).forEach(i => { const o = [0, 1, 2, 3].filter(d => !(walls[i] & DIRS[d][2])); if (o.length) hazard.currents.set(i, pick(o)); });
+    if (key === 'phase') {
+      const edge = new Set(bsegs), cand = segs.filter(sg => !edge.has(sg)).sort(() => Math.random() - 0.5).slice(0, clamp(Math.round(segs.length * 0.08), 4, 14));
+      cand.forEach(sg => {
+        const c = Math.round((sg.x1 - ox) / cs), r = Math.round((sg.y1 - oy) / cs);
+        const horiz = sg.y1 === sg.y2, a = horiz ? r * cols + c : r * cols + c, b = horiz ? (r - 1) * cols + c : r * cols + c - 1;
+        if (a < 0 || b < 0 || !active[a] || !active[b]) return;
+        hazard.phase.push({ seg: sg, a, b, ba: horiz ? 1 : 8, bb: horiz ? 4 : 2, ph: rnd(0, 9), open: false });
+      });
+      segs = segs.filter(sg => !hazard.phase.some(p => p.seg === sg)); // drawn live instead of baked into the static layer
+    }
+  }
+  function updateHazards() {
+    const t = game.clock;
+    hazard.phase.forEach(p => {
+      const open = (t + p.ph) % 9 >= 6;
+      if (open !== p.open) { p.open = open; if (open) { walls[p.a] &= ~p.ba; walls[p.b] &= ~p.bb; } else { walls[p.a] |= p.ba; walls[p.b] |= p.bb; } }
+    });
+    if (game.state === 'play' && game.ready <= 0 && game.invuln <= 0) for (const v of hazard.vents) { const u = (t + v.ph) % 9; if (u >= 7 && u < 8.6 && Math.hypot(me.x - px(v.i), me.y - py(v.i)) < cs * 0.4) { caught('lava'); break; } }
+  }
+  function drawHazards() {
+    const T = theme(), t = game.clock, ww = Math.max(5, cs * 0.15);
+    if (!hazard.vents.length && !hazard.currents.size && !hazard.phase.length) return;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    hazard.currents.forEach((d, i) => {
+      const x = px(i), y = py(i), vx = DIRS[d][0], vy = DIRS[d][1], sz = cs * 0.15; ctx.strokeStyle = '#f4f4ff'; ctx.lineWidth = 3.2;
+      for (let k = 0; k < 2; k++) { const f = ((t * 0.9 + k * 0.5) % 1) - 0.5, cxp = x + vx * f * cs * 0.7, cyp = y + vy * f * cs * 0.7; ctx.globalAlpha = Math.max(0, 0.8 * (1 - Math.abs(f) * 1.5)); ctx.beginPath(); ctx.moveTo(cxp - vx * sz - vy * sz * 1.3, cyp - vy * sz + vx * sz * 1.3); ctx.lineTo(cxp + vx * sz, cyp + vy * sz); ctx.lineTo(cxp - vx * sz + vy * sz * 1.3, cyp - vy * sz - vx * sz * 1.3); ctx.stroke(); }
+    });
+    ctx.globalAlpha = 1;
+    hazard.vents.forEach(v => {
+      const u = (t + v.ph) % 9, x = px(v.i), y = py(v.i), r = cs * 0.34, tel = u >= 5.5 && u < 7, er = u >= 7 && u < 8.6;
+      if (tel || er) { const g = ctx.createRadialGradient(x, y, 0, x, y, r * (er ? 2 : 1.5)); g.addColorStop(0, er ? 'rgba(255,210,90,0.85)' : 'rgba(255,100,40,0.5)'); g.addColorStop(1, 'rgba(255,90,30,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * (er ? 2 : 1.5), 0, 6.283); ctx.fill(); }
+      ctx.strokeStyle = er ? '#fff3c0' : tel ? '#ff7a3a' : 'rgba(255,90,40,0.8)'; ctx.lineWidth = 2; ctx.beginPath();
+      for (let k = 0; k < 6; k++) { const a = k * 1.047 + v.ph, r0 = r * 0.18, r1 = r * (0.7 + 0.25 * Math.sin(k * 2.7)); ctx.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0); ctx.lineTo(x + Math.cos(a + 0.2) * r1 * 0.6, y + Math.sin(a + 0.2) * r1 * 0.6); ctx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1); }
+      ctx.stroke();
+      if (tel) { ctx.globalAlpha = 0.45 + 0.4 * Math.sin(t * 14); ctx.strokeStyle = '#ff5a2a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.stroke(); ctx.globalAlpha = 1; }
+      if (er) for (let i = -1; i <= 1; i++) { ctx.fillStyle = '#ffb347'; ctx.beginPath(); flame(ctx, x + i * r * 0.55, y + r * 0.45, cs * 0.11, t * 2, i * 2); ctx.fill(); ctx.fillStyle = '#fff3c0'; ctx.beginPath(); flame(ctx, x + i * r * 0.55, y + r * 0.5, cs * 0.06, t * 2, i * 2); ctx.fill(); }
+    });
+    hazard.phase.forEach(p => {
+      const u = (t + p.ph) % 9, flick = (u >= 5 && u < 6) || (u >= 8 && u < 9), open = u >= 6, sg = p.seg;
+      ctx.lineWidth = ww;
+      if (open) { ctx.globalAlpha = flick ? 0.3 + 0.3 * Math.abs(Math.sin(t * 30)) : 0.16; ctx.setLineDash([4, 7]); ctx.strokeStyle = T.accent; }
+      else { ctx.globalAlpha = flick ? 0.35 + 0.55 * Math.abs(Math.sin(t * 26)) : 1; ctx.setLineDash([]); ctx.strokeStyle = T.ink; ctx.shadowColor = T.accent; ctx.shadowBlur = 8; }
+      ctx.beginPath(); ctx.moveTo(sg.x1, sg.y1); ctx.lineTo(sg.x2, sg.y2); ctx.stroke(); ctx.shadowBlur = 0;
+    });
+    ctx.restore();
+  }
+
   /* ---------- update ---------- */
   function update(dt) {
     game.clock += dt;
@@ -621,6 +714,8 @@ body { margin: 0; }
       if (f.t >= 0.55) { shown[f.key]++; pops[f.key][f.key === 'wisps' ? Math.floor((f.idx * trackGeom('wisps').units) / trackGeom('wisps').n) : f.idx] = game.clock; burst(f.tx, f.ty, theme().accent, 6, 70); flyers.splice(i, 1); }
     }
 
+    updateHazards();
+    if (kb.on && game.state !== 'over') { ptr.x = me.x; ptr.y = me.y - cs * 0.55; ptr.t = performance.now(); } // keyboard play: the guide rides above the minotaur
     // once the minotaur has reached your guide and you've stopped, it picks the guide up
     const idle = (performance.now() - (ptr.t || 0)) / 1000 > 0.4, caughtUp = me.A === me.B && Math.abs(ptr.x - px(me.A)) < cs * 0.5 && Math.abs(ptr.y - py(me.A)) < cs * 0.5;
     game.hover += ((caughtUp && idle && game.state !== 'over' ? 1 : 0) - game.hover) * Math.min(1, dt * 7);
@@ -653,7 +748,7 @@ body { margin: 0; }
         if (game.ready <= 0 && fx.cold <= 0 && g.stun <= 0) {
           g.mt -= dt;
           if (g.mt <= 0) { g.mode = g.mode === 'chase' ? 'wander' : 'chase'; g.mt = g.mode === 'chase' ? rnd(6, 9) : rnd(3, 5); g.emote = { ch: g.mode === 'chase' ? '!' : '?', t: 1.1 }; }
-          const base = 2.0 + Math.min(game.level, 8) * 0.14;
+          const base = (2.0 + Math.min(game.level, 8) * 0.14) * (isSmall() ? 0.88 : 1);
           if (fx.boo > 0) step(g, dMe, base * 0.6, dt, true);
           else if (dDecoy) step(g, dDecoy, base * 1.1, dt, false);
           else if (g.mode === 'wander') {
@@ -680,7 +775,10 @@ body { margin: 0; }
         const bonus = 100 * game.level; game.score += bonus;
         burst(me.x, me.y, TORCH, 40, 300); sfx.clear();
         if (game.level >= GOALS.length) { winGame(); }
-        else { game.state = 'clear'; game.clearT = 1.8; game.banner = { text: 'Floor ' + game.level + ' cleared  +' + bonus, t: 1.8 }; }
+        else {
+          const heal = (game.level === 2 || game.level === 4) && game.lives < LIVES; if (heal) game.lives++; // a breather halfway through each half
+          game.state = 'clear'; game.clearT = 1.8; game.banner = { text: 'Floor ' + game.level + ' cleared  +' + bonus + (heal ? '  +1 life' : ''), t: 1.8 };
+        }
       }
     } else {
       ghosts.forEach(g => { const q = lp(g); g.x = q.x; g.y = q.y; });
@@ -765,14 +863,14 @@ body { margin: 0; }
     },
   };
   function buildLegend() {
-    const lg = $('legend'); lg.innerHTML = '';
+    [$('legend'), $('legend2')].filter(Boolean).forEach(lg => { lg.innerHTML = '';
     KEYS.forEach(k => {
       const span = document.createElement('span'), cvs = document.createElement('canvas'), c = cvs.getContext('2d');
       cvs.width = cvs.height = 44; cvs.className = 'lg';
       c.fillStyle = IC.dark; c.fillRect(0, 0, 44, 44); c.strokeStyle = TYPES[k].c; c.lineWidth = 4; c.strokeRect(2, 2, 40, 40);
       ICONS[k](c, 22, 23, 14, 0.8, TYPES[k].c);
       span.appendChild(cvs); span.appendChild(document.createTextNode(`${TYPES[k].name}: ${TYPES[k].d}`)); lg.appendChild(span);
-    });
+    }); });
   }
 
   /* ---------- the Greek vase look: flat black silhouettes, scratched detail, painted borders ---------- */
@@ -1254,7 +1352,7 @@ body { margin: 0; }
     return {
       font: '"Press Start 2P"', ready: false, build,
       render(T) {
-        ctx.imageSmoothingEnabled = false; ctx.drawImage(stat, 0, 0, W, H);
+        ctx.imageSmoothingEnabled = false; ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         L.clearRect(0, 0, LW, LH);
         // wall torches
         const pl = pal(), tf = Math.floor(game.clock * 6);
@@ -1452,7 +1550,7 @@ body { margin: 0; }
     return {
       font: '"Rubik Mono One"', ready: false, build,
       render(T) {
-        ctx.drawImage(stat, 0, 0, W, H);
+        ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyR(); boxes.forEach(relic); ghosts.forEach(wardenR); spookR(spook); meR(); partsR(); guideR(); drawTracks();
         ensureGrain(); ctx.drawImage(grainCv, 0, 0, W, H);
       },
@@ -1617,7 +1715,7 @@ body { margin: 0; }
     return {
       font: 'Fredoka', ready: false, build,
       render(T) {
-        ctx.drawImage(stat, 0, 0, W, H);
+        ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyP(); boxes.forEach(relic); ghosts.forEach(wardenP); spookP(spook); meP(); partsP(); guideP(); drawTracks();
       },
       banner() {
@@ -1793,7 +1891,7 @@ body { margin: 0; }
     return {
       font: 'Caveat', ready: false, build,
       render(T) {
-        ctx.drawImage(stat, 0, 0, W, H);
+        ctx.drawImage(stat, 0, 0, W, H); drawHazards();
         wisps(); decoyW(); boxes.forEach(relic); ghosts.forEach(wardenW); spookW(spook); meW(); partsW(); guideW(); drawTracks();
         ensureGrain(); ctx.drawImage(grainCv, 0, 0, W, H);
       },
@@ -1833,7 +1931,7 @@ body { margin: 0; }
     build: buildStatic,
     banner: drawBanner,
     render(T) {
-      ctx.drawImage(staticCv, 0, 0, W, H);
+      ctx.drawImage(staticCv, 0, 0, W, H); drawHazards();
       drawDots(T); drawDecoy();
       boxes.forEach(drawBox);
       ghosts.forEach(drawWarden);
@@ -1876,17 +1974,18 @@ body { margin: 0; }
   function updateHud() {
     const goal = GOALS[Math.min(game.level, GOALS.length) - 1], reqs = Object.entries(goal.req);
     hLevel.textContent = game.level + '/' + GOALS.length; hScore.textContent = game.score;
-    hLives.textContent = game.lives; hLives.className = game.lives === 1 ? 'low' : '';
+    const lk = game.lives + '/' + game.state; if (hLives.dataset.k !== lk) { hLives.dataset.k = lk; hLives.innerHTML = Array.from({ length: LIVES }, (_, i) => `<svg class="life${i < game.lives ? '' : ' gone'}" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M2.5 3.5c.8 4.2 3.2 6.6 6.8 6.8M21.5 3.5c-.8 4.2-3.2 6.6-6.8 6.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="13.5" r="6.6" fill="currentColor"/><ellipse cx="12" cy="17" rx="3.6" ry="2.5" fill="var(--ink)"/></svg>`).join(''); hLives.setAttribute('aria-label', 'Lives: ' + game.lives); } hLives.className = game.lives === 1 ? 'low' : '';
     gTitle.textContent = 'Floor ' + game.level + ': ' + goal.text;
     gProg.textContent = reqs.map(([k, n]) => (reqs.length > 1 ? LABEL[k] + ' ' : '') + Math.min(game.prog[k], n) + '/' + n).join('  ');
     const s = KEYS.filter(k => game.fx[k] > 0).map(k => `<span class="pill" style="--c:${TYPES[k].c}">${TYPES[k].name} ${Math.ceil(game.fx[k])}s</span>`).join('');
-    const out = s || (game.state === 'play' ? 'Ghost hunts your guide. Wardens hunt the minotaur.' : '');
+    const tw = theme().twist, out = s || (game.state === 'play' ? 'Ghost hunts your guide. Wardens hunt the minotaur.' + (tw ? ' ' + tw + '.' : '') : '');
     if (out !== lastStatus) { statusEl.innerHTML = out; lastStatus = out; }
   }
   function showCard(html) {
     overlay.hidden = false;
     overlay.innerHTML = '<div class="card">' + html + '</div>';
-    overlay.querySelector('button').addEventListener('click', startGame);
+    overlay.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { const a = b.dataset.act; if (a === 'share') shareResult(b); else if (a === 'save') saveCard(b); else if (a === 'resume') resumeGame(); else startGame(); }));
+    const first = overlay.querySelector('button'); if (first) first.focus({ preventScroll: true });
   }
   /* ---------- settings: sound + art style ---------- */
   const STYLE_INFO = {
@@ -1905,9 +2004,29 @@ body { margin: 0; }
     styleList.querySelectorAll('input').forEach(i => (i.checked = i.value === name));
   }
   function openSettings(open) {
-    settingsEl.hidden = !open; gearBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); game.paused = open;
+    settingsEl.hidden = !open; gearBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); game.paused = open || game.pausedByCard;
     if (open) { const c = styleList.querySelector('input:checked'); (c || sndSwitch).focus(); } else gearBtn.focus();
   }
+  function pauseGame() {
+    if (game.state !== 'play' || game.paused || !settingsEl.hidden) return;
+    game.paused = true; game.pausedByCard = true; overlay.hidden = false;
+    showCard('<h2>Paused</h2><p>Your run is waiting. Press P to resume.</p><button data-act="resume">Resume</button>');
+  }
+  function resumeGame() {
+    if (!game.pausedByCard) return;
+    game.pausedByCard = false; game.paused = !settingsEl.hidden; overlay.hidden = true;
+  }
+  function bindKeys() {
+    window.addEventListener('keydown', e => {
+      if (!settingsEl.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.code === 'KeyP' || (e.code === 'Escape' && game.state === 'play')) { e.preventDefault(); game.pausedByCard ? resumeGame() : pauseGame(); return; }
+      if (game.pausedByCard) return;
+      if (e.code in KEYDIR && (game.state === 'play' || game.state === 'idle')) { e.preventDefault(); if (!kb.on) { kb.cx = -999; kb.cy = -999; } kb.on = true; kb.dir = KEYDIR[e.code]; }
+      else if (e.code === 'Space' && kb.on && game.state === 'play') { e.preventDefault(); kb.dir = null; }
+    });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+  }
+
   function buildSettings() {
     styleList.innerHTML = '';
     STYLE_ORDER.forEach(k => {
@@ -1922,10 +2041,11 @@ body { margin: 0; }
     $('setClose').addEventListener('click', () => openSettings(false));
     settingsEl.addEventListener('pointerdown', e => { if (e.target === settingsEl) openSettings(false); });
     window.addEventListener('keydown', e => { if (e.key === 'Escape' && !settingsEl.hidden) openSettings(false); });
+    bindKeys();
     showSound();
   }
   function startGame() {
-    Object.assign(game, { state: 'play', level: 1, score: 0, lives: LIVES, chain: 0, prog: freshProg() });
+    Object.assign(game, { state: 'play', level: 1, score: 0, lives: LIVES, chain: 0, prog: freshProg(), stats: { wisps: 0, boxes: 0, catches: 0 } });
     setupLevel(); overlay.hidden = true;
   }
   function goalMet() { return Object.entries(GOALS[game.level - 1].req).every(([k, n]) => game.prog[k] >= n); }
@@ -1934,29 +2054,78 @@ body { margin: 0; }
     if (isBest) { best = game.score; try { localStorage.setItem('lantern-best', String(best)); } catch (e) {} }
     return isBest;
   }
+  /* ---------- share the result as text and as an image card ---------- */
+  function minoHead(g, x, y, s, col, cut) {
+    g.save(); g.fillStyle = col; g.strokeStyle = col; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x - s * 1.15, y + s * 2.1); g.quadraticCurveTo(x - s * 1.0, y + s * 0.75, x, y + s * 0.7); g.quadraticCurveTo(x + s * 1.0, y + s * 0.75, x + s * 1.15, y + s * 2.1); g.closePath(); g.fill();
+    g.beginPath(); g.arc(x, y, s, 0, 6.283); g.fill();
+    g.lineWidth = s * 0.36; g.beginPath(); g.moveTo(x - s * 0.7, y - s * 0.5); g.quadraticCurveTo(x - s * 1.8, y - s * 0.4, x - s * 1.4, y - s * 1.75); g.moveTo(x + s * 0.7, y - s * 0.5); g.quadraticCurveTo(x + s * 1.8, y - s * 0.4, x + s * 1.4, y - s * 1.75); g.stroke();
+    g.beginPath(); g.ellipse(x, y + s * 0.5, s * 0.55, s * 0.4, 0, 0, 6.283); g.fill();
+    g.strokeStyle = cut; g.lineWidth = Math.max(2, s * 0.05);
+    [-1, 1].forEach(d => { g.beginPath(); g.ellipse(x + d * s * 0.4, y - s * 0.15, s * 0.2, s * 0.1, -d * 0.35, 0, 6.283); g.stroke(); g.beginPath(); g.arc(x + d * s * 0.2, y + s * 0.55, s * 0.04, 0, 6.283); g.stroke(); });
+    g.restore();
+  }
+  function cardCanvas() {
+    const T = theme(), won = game.state === 'won', c = document.createElement('canvas'); c.width = 1200; c.height = 630; const g = c.getContext('2d');
+    const gr = g.createRadialGradient(600, 315, 60, 600, 315, 760); gr.addColorStop(0, T.ground[0]); gr.addColorStop(0.7, T.ground[1]); gr.addColorStop(1, T.ground[2]); g.fillStyle = gr; g.fillRect(0, 0, 1200, 630);
+    const r = seeded(9); g.fillStyle = T.speck; for (let i = 0; i < 2600; i++) { g.globalAlpha = 0.05 + r() * 0.15; g.beginPath(); g.arc(r() * 1200, r() * 630, 0.5 + r() * 1.2, 0, 6.283); g.fill(); } g.globalAlpha = 1;
+    g.strokeStyle = T.ink; g.lineWidth = 10; g.strokeRect(18, 18, 1164, 594); g.lineWidth = 3; g.strokeRect(36, 36, 1128, 558);
+    (MOTIFS[T.motif] || meander)(g, 70, 58, 1060, 6.5, T.ink); (MOTIFS[T.motif] || meander)(g, 70, 538, 1060, 6.5, T.ink);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.font = '800 70px Cinzel, Georgia, serif'; g.lineWidth = 12; g.strokeStyle = '#0a0705'; g.strokeText('Lantern Labyrinth', 600, 150); g.fillStyle = T.cream; g.fillText('Lantern Labyrinth', 600, 150);
+    g.font = '700 44px Gabarito, sans-serif'; const line = won ? 'I escaped the labyrinth!' : `Made it to floor ${game.level} of ${GOALS.length}`; g.lineWidth = 9; g.strokeText(line, 600, 232); g.fillStyle = T.accent; g.fillText(line, 600, 232);
+    g.font = '800 168px Gabarito, sans-serif'; g.lineWidth = 16; g.strokeText(String(game.score), 600, 365); g.fillStyle = T.cream; g.fillText(String(game.score), 600, 365);
+    g.font = '600 30px Gabarito, sans-serif'; g.lineWidth = 7; const st = `${game.stats.wisps} wisps   ${game.stats.boxes} powerups   ${game.stats.catches} enemies caught`; g.strokeText(st, 600, 470); g.fillStyle = T.cream; g.fillText(st, 600, 470);
+    g.font = '600 26px "DM Mono", monospace'; g.lineWidth = 6; g.strokeText('tinyminotaur.co/lantern-labyrinth', 600, 515); g.fillStyle = T.accent; g.fillText('tinyminotaur.co/lantern-labyrinth', 600, 515);
+    minoHead(g, 170, 330, 62, T.ink, T.cut);
+    g.save(); g.translate(1030, 340); g.rotate(0.3); g.strokeStyle = T.ink; g.lineWidth = 8; g.lineCap = 'round'; for (let i = 0; i < 12; i++) { g.rotate(6.283 / 12); g.beginPath(); g.moveTo(44, 0); g.lineTo(i % 2 ? 66 : 86, 0); g.stroke(); } g.fillStyle = T.cream; g.beginPath(); g.arc(0, 0, 36, 0, 6.283); g.fill(); g.stroke(); g.fillStyle = '#c0452a'; g.beginPath(); g.arc(0, 0, 14, 0, 6.283); g.fill(); g.restore();
+    return c;
+  }
+  const cardBlob = () => new Promise(res => cardCanvas().toBlob(b => res(b), 'image/png'));
+  const resultText = () => `${game.state === 'won' ? 'I escaped the labyrinth' : 'I made it to floor ' + game.level + ' of ' + GOALS.length} in Lantern Labyrinth with ${game.score} points. https://tinyminotaur.co/lantern-labyrinth`;
+  async function shareResult(btn) {
+    const text = resultText(), label = btn.textContent;
+    try {
+      const blob = await cardBlob(), file = blob && new File([blob], 'lantern-labyrinth.png', { type: 'image/png' });
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text, title: 'Lantern Labyrinth' }); return; }
+      if (navigator.share) { await navigator.share({ text, title: 'Lantern Labyrinth' }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch (e) { btn.textContent = 'Copy failed'; }
+    setTimeout(() => (btn.textContent = label), 1600);
+  }
+  async function saveCard(btn) {
+    const blob = await cardBlob(); if (!blob) return;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lantern-labyrinth.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const label = btn.textContent; btn.textContent = 'Saved'; setTimeout(() => (btn.textContent = label), 1600);
+  }
+
   function winGame() {
     game.state = 'won';
     const isBest = saveBest();
-    showCard(`<h2>You escaped!</h2><div class="big">${game.score}</div><p>All ${GOALS.length} floors cleared. ${isBest ? 'New best.' : 'Best: ' + best}</p><button>Play again</button>`);
+    showCard(`<h2>You escaped!</h2><div class="big">${game.score}</div><p>All ${GOALS.length} floors cleared. ${isBest ? 'New best.' : 'Best: ' + best}</p><button data-act="play">Play again</button><div class="btnrow"><button class="alt" data-act="share">Share result</button><button class="alt" data-act="save">Save image</button></div>`);
   }
   function endGame() {
     game.state = 'over';
     const isBest = saveBest();
-    showCard(`<h2>Out of lives</h2><div class="big">${game.score}</div><p>You made it to floor ${game.level} of ${GOALS.length}. ${isBest ? 'New best.' : 'Best: ' + best}</p><button>Play again</button>`);
+    showCard(`<h2>Out of lives</h2><div class="big">${game.score}</div><p>You made it to floor ${game.level} of ${GOALS.length}. ${isBest ? 'New best.' : 'Best: ' + best}</p><button data-act="play">Play again</button><div class="btnrow"><button class="alt" data-act="share">Share result</button><button class="alt" data-act="save">Save image</button></div>`);
   }
   function intro() {
     showCard(`<h2>Lantern Labyrinth</h2>
       <p class="goal">Clear <b>6 floors</b>. Each floor has a goal, like eating wisps or opening boxes. Reach it before you lose all <b>5 lives</b>.</p>
       <p>You are the <b>guide</b>, the glowing lantern that leads the minotaur. Two enemies, two targets: the <b>ghost</b> floats through walls after <b>you</b>, and <b>wardens</b> chase the <b>minotaur</b> through the corridors. Either one catching its target costs a life.</p>
       <p>The minotaur follows your guide but can't pass walls, so keep moving away from the ghost. Grab powerups for special abilities.</p>
-      <p>On a phone, drag your finger.</p><button>Play</button>`);
+      <p>On a phone, drag your finger. On a keyboard, use the arrow keys or WASD. P pauses.</p><button>Play</button>`);
   }
 
   /* ---------- input (pointer events: mouse + touch + pen) ---------- */
   function setPtr(e) {
     if (!settingsEl.hidden || e.target.closest && e.target.closest('#gear')) return;
     const r = cv.getBoundingClientRect();
-    ptr.x = clamp(e.clientX - r.left, 0, W); ptr.y = clamp(e.clientY - r.top, 0, H); ptr.seen = true; ptr.t = performance.now();
+    const lift = e.pointerType === 'touch' ? 46 : 0; // on touch screens the guide floats above your fingertip so you can see it
+    if (kb.on && Math.hypot(e.clientX - kb.cx, e.clientY - kb.cy) > 8) kb.on = false; // moving the mouse hands control back to the pointer
+    kb.cx = e.clientX; kb.cy = e.clientY;
+    if (kb.on) return;
+    ptr.x = clamp(e.clientX - r.left, 0, W); ptr.y = clamp(e.clientY - r.top - lift, 0, H); ptr.seen = true; ptr.t = performance.now();
   }
   window.addEventListener('pointermove', setPtr); // keep following even when your pointer leaves the maze or the arena
   window.addEventListener('pointerdown', setPtr);
