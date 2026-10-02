@@ -183,7 +183,7 @@ body { margin: 0; }
   const TYPES = {
     treat:   { c: '#ff7ab6', g: 'T', name: 'Treat',   d: 'you run faster',          dur: 6 },
     mirror:  { c: '#5eead4', g: 'D', name: 'Decoy',   d: 'enemies chase a lantern',  dur: 7 },
-    boo:     { c: '#7a8cff', g: 'B', name: 'Boo',     d: 'turn the tables, eat enemies', dur: 7 },
+    boo:     { c: '#7a8cff', g: 'B', name: 'Boo',     d: 'turn the tables: eat enemies, even frozen ones', dur: 7 },
     gravity: { c: '#c39bff', g: 'G', name: 'Gravity', d: 'wisp magnet',             dur: 7 },
     cold:    { c: '#9fd3ff', g: 'C', name: 'Cold',    d: 'freezes enemies',      dur: 5 },
   };
@@ -253,6 +253,12 @@ body { margin: 0; }
     caught: () => tone(220, 0.45, 'sawtooth', 0.08, 0.35),
     catch: () => { tone(330, 0.12, 'square', 0.05, 2); tone(660, 0.16, 'square', 0.05, 1.5, 0.1); },
     fool: () => tone(900, 0.2, 'sine', 0.06, 0.5),
+    thud: () => { tone(120, 0.25, 'sine', 0.1, 0.5); tone(70, 0.3, 'sine', 0.08, 0.6, 0.05); },
+    clang: () => { tone(1250, 0.07, 'square', 0.05, 0.6); tone(900, 0.16, 'triangle', 0.05, 0.5, 0.03); tone(1700, 0.1, 'square', 0.03, 0.7, 0.06); },
+    bleat: () => { [0, 0.09, 0.18].forEach(d => tone(560 - d * 500, 0.1, 'sawtooth', 0.04, 0.85, d)); },
+    ghostDie: () => { tone(700, 0.55, 'sine', 0.05, 0.4); tone(1050, 0.65, 'sine', 0.03, 0.4, 0.08); },
+    shatter: () => { tone(1500, 0.14, 'triangle', 0.06, 0.3); tone(2100, 0.1, 'square', 0.03, 0.4, 0.04); tone(320, 0.7, 'sawtooth', 0.04, 0.5, 0.15); },
+    sizzle: () => { tone(900, 0.5, 'sawtooth', 0.03, 0.3); tone(240, 0.5, 'square', 0.03, 0.5, 0.05); },
     clear: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'triangle', 0.06, 1, i * 0.1)),
   };
   const isSmall = () => W < 560;
@@ -370,7 +376,7 @@ body { margin: 0; }
   }
 
   /* ---------- ghosts glide cell to cell along corridors ---------- */
-  function newGhost(cell, k) { return { A: cell, B: cell, t: 0, x: px(cell), y: py(cell), vx: 0, vy: 0, home: cell, k, mode: 'chase', mt: rnd(5, 8), wt: cell, eaten: 0, stun: 0 }; }
+  function newGhost(cell, k) { return { A: cell, B: cell, t: 0, x: px(cell), y: py(cell), vx: 0, vy: 0, home: cell, k, mode: 'chase', mt: rnd(5, 8), wt: cell, eaten: 0, stun: 0 , spawnT: 0.8 }; }
   function lp(e) { return { x: px(e.A) + (px(e.B) - px(e.A)) * e.t, y: py(e.A) + (py(e.B) - py(e.A)) * e.t }; }
   function nearCell(e) { return e.t < 0.5 ? e.A : e.B; }
   function choose(e, dist, s) {
@@ -415,7 +421,7 @@ body { margin: 0; }
       used.add(c); ghosts.push(newGhost(c, k));
     }
     let sc = pick(far); while (used.has(sc)) sc = pick(far);
-    spook = { x: px(sc), y: py(sc), vx: 0, vy: 0, home: sc, eaten: 0, stun: 0 };
+    spook = { x: px(sc), y: py(sc), vx: 0, vy: 0, home: sc, eaten: 0, stun: 0, spawnT: 0.8 };
     boxes = [];
     const nBoxes = Math.max(clamp(2 + Math.floor(game.level / 2), 2, 5), (GOALS[game.level - 1].needCount || 0) + 1);
     for (let k = 0; k < nBoxes; k++) boxes.push({ i: -1, type: '', appear: 0, cd: 0, active: false });
@@ -468,22 +474,12 @@ body { margin: 0; }
     if (b.type === 'mirror') decoy = { x, y, i: b.i };
     b.active = false; b.cd = 5;
   }
-  function caught(kind) {
-    game.lives--; game.shake = 0.5; game.flash = 1; sfx.caught();
-    burst(kind === 'ghost' ? ptr.x : me.x, kind === 'ghost' ? ptr.y : me.y, '#ff6b6b', 30, 260);
-    if (game.lives <= 0) { endGame(); return; }
-    Object.assign(me, { A: startCell, B: startCell, t: 0, dir: null, x: px(startCell), y: py(startCell) });
-    ghosts.forEach(o => Object.assign(o, newGhost(o.home, o.k)));
-    Object.assign(spook, { x: px(spook.home), y: py(spook.home), vx: 0, vy: 0, eaten: 0, stun: 0 });
-    Object.keys(game.fx).forEach(k => (game.fx[k] = 0)); decoy = null;
-    game.invuln = 2.4; game.ready = 1.6;
-    game.banner = { text: (kind === 'ghost' ? 'The ghost got your guide!' : kind === 'lava' ? 'The forge burned you!' : 'A warden got you!') + (game.lives === 1 ? ' Last life' : ''), t: 1.8 };
-  }
+  function caught(kind) { if (game.state === 'play') startDeath(kind); }
 
   /* ---------- the ghost: floats straight at your guide (the pointer), ignoring walls ---------- */
   function updateSpook(dt) {
     const s = spook, fx = game.fx;
-    if (s.eaten > 0) { s.eaten -= dt; if (s.eaten <= 0) Object.assign(s, { x: px(s.home), y: py(s.home), vx: 0, vy: 0 }); return; }
+    if (s.eaten > 0) { s.eaten -= dt; if (s.eaten <= 0) { Object.assign(s, { x: px(s.home), y: py(s.home), vx: 0, vy: 0, spawnT: 0.8 }); spawnP({ shape: 'ring', x: s.x, y: s.y, r: 4, grow: 70, life: 0.6, c: theme().accent }); } return; }
     s.stun = Math.max(0, s.stun - dt);
     if (game.ready <= 0 && fx.cold <= 0 && s.stun <= 0) {
       let tx = ptr.x, ty = ptr.y;
@@ -501,12 +497,12 @@ body { margin: 0; }
       burst(decoy.x, decoy.y, TYPES.mirror.c, 20, 200); decoy = null; fx.mirror = 0; s.stun = 2.5; bump('fooled', s.x, s.y); sfx.fool();
       addScore(50, s.x, s.y, '+50 fooled', TYPES.mirror.c);
     }
-    if (fx.cold > 0 || s.stun > 0) return;
+    if (fx.boo <= 0 && (fx.cold > 0 || s.stun > 0)) return; // frozen or dazed enemies are harmless, unless you can eat them
     if (Math.hypot(s.x - ptr.x, s.y - ptr.y) < cs * 0.24 + 6) {
       if (fx.boo > 0) {
         game.chain = Math.min(game.chain + 1, 4);
         addScore(200 * game.chain, s.x, s.y, '+' + 200 * game.chain, TYPES.boo.c);
-        burst(s.x, s.y, TYPES.boo.c, 26, 240); s.eaten = 4; bump('catches', s.x, s.y); sfx.catch(); s.x = s.y = -999;
+        burst(s.x, s.y, TYPES.boo.c, 14, 200); bump('catches', s.x, s.y); sfx.catch(); killEnemy(s, 'ghost');
       } else if (game.invuln <= 0) caught('ghost');
     }
   }
@@ -698,6 +694,107 @@ body { margin: 0; }
     ctx.restore();
   }
 
+  /* ---------- deaths: each being goes out in its own way ---------- */
+  const spawnP = p => parts.push({ vx: 0, vy: 0, r: 3, c: '#fff', rot: 0, life: 1, ...p, max: p.life });
+  const easeOutBack = q => { const c1 = 1.7, c3 = c1 + 1; return 1 + c3 * Math.pow(q - 1, 3) + c1 * Math.pow(q - 1, 2); };
+  const CLR = { gold: '#f2b134', brass: '#d9a441', leaf: '#6fbf5a', petal: '#ff9ec7', cream: '#f4e8cf', red: '#e0553c', ash: '#9a948c', ember: '#ff8a3a', tear: '#9fd3ff', star: '#ffe27a' };
+  function puffs(x, y, n, col, sp) { for (let i = 0; i < n; i++) { const a = rnd(0, 6.283); spawnP({ shape: 'puff', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.5 - 10, r: rnd(3, 6), grow: 14, life: rnd(0.4, 0.7), c: col }); } }
+  function startDeath(src) {
+    const kind = { warden: 'knock', ghost: 'sad', lava: 'burn' }[src], dur = { knock: 1.5, sad: 1.5, burn: 1.6 }[kind];
+    game.lives--; game.shake = 0.5; game.flash = 1; game.invuln = 99; game.chain = 0;
+    game.state = 'dying'; game.dying = { kind, t: 0, dur, last: 0 }; me.dead = { kind, t: 0, dur };
+    decoy = null; Object.keys(game.fx).forEach(k => (game.fx[k] = 0));
+    const x = me.x, y = me.y;
+    if (kind === 'knock') { // knocked flat, with stars circling his head
+      sfx.thud(); puffs(x, y + cs * 0.3, 9, CLR.cream, 90);
+      for (let i = 0; i < 6; i++) spawnP({ shape: 'star', x, y, orbit: { a: i * 1.047, s: 6, r: cs * 0.42 }, r: cs * 0.08, life: 1.4, c: CLR.star, spin: 4 });
+      spawnP({ text: 'OOF!', x, y: y - cs * 0.9, vy: -30, life: 1.2, c: '#ffd36a' });
+    } else if (kind === 'sad') { // the lantern shatters and he slumps
+      sfx.shatter(); const gp = guidePos();
+      for (let i = 0; i < 16; i++) { const a = (i / 16) * 6.283 + rnd(-0.1, 0.1), sp = rnd(120, 260); spawnP({ shape: 'ray', x: gp.x, y: gp.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: a, spin: rnd(-4, 4), len: rnd(10, 22), drag: 0.93, life: rnd(0.7, 1.1), c: i % 2 ? CLR.star : CLR.red }); }
+      spawnP({ shape: 'ring', x: gp.x, y: gp.y, r: 6, grow: 120, life: 0.55, c: CLR.star });
+      spawnP({ text: 'My lantern!', x, y: y - cs * 0.9, vy: -22, life: 1.4, c: '#ffd36a' });
+    } else { // burned, launched into the air
+      sfx.sizzle(); puffs(x, y + cs * 0.2, 8, CLR.ash, 70);
+      for (let i = 0; i < 10; i++) spawnP({ shape: 'wisp', x: x + rnd(-8, 8), y: y + rnd(-4, 10), vx: rnd(-30, 30), vy: rnd(-120, -50), r: cs * 0.07, life: rnd(0.6, 1.1), c: i % 2 ? CLR.ember : CLR.star, ph: i });
+      spawnP({ text: 'HOT!', x, y: y - cs * 0.9, vy: -30, life: 1.1, c: '#ff9a5a' });
+    }
+    game.banner = { text: (src === 'ghost' ? 'The ghost got your guide!' : src === 'lava' ? 'The forge burned you!' : 'A warden got you!') + (game.lives === 1 ? ' Last life' : ''), t: 1.8 };
+  }
+  function finishDeath() {
+    game.dying = null;
+    if (game.lives <= 0) { me.dead.t = me.dead.dur; endGame(); return; }
+    me.dead = null; game.state = 'play';
+    Object.assign(me, { A: startCell, B: startCell, t: 0, dir: null, x: px(startCell), y: py(startCell), spawnT: 0.8 });
+    ghosts.forEach(o => Object.assign(o, newGhost(o.home, o.k)));
+    Object.assign(spook, { x: px(spook.home), y: py(spook.home), vx: 0, vy: 0, eaten: 0, stun: 0, dead: null, spawnT: 0.8 });
+    game.invuln = 2.4; game.ready = 1.6;
+    spawnP({ shape: 'ring', x: me.x, y: me.y, r: 4, grow: 70, life: 0.6, c: theme().accent });
+  }
+  function killEnemy(g, who) { // 'hoplite' | 'satyr' | 'ghost'
+    const D = { hoplite: 0.9, satyr: 0.9, ghost: 1.1 }[who], x = g.x, y = g.y, r = cs * 0.3;
+    g.dead = { kind: who, t: 0, dur: D }; g.eaten = 4 + D;
+    if (who === 'hoplite') { // armor clatters apart: shards, a drifting plume, a shield that rolls away
+      sfx.clang(); puffs(x, y + r * 0.5, 7, CLR.cream, 80);
+      for (let i = 0; i < 9; i++) spawnP({ shape: 'shard', x, y, vx: rnd(-130, 130), vy: rnd(-230, -80), g: 520, spin: rnd(-12, 12), r: rnd(2.5, 4.5), life: rnd(0.7, 1.1), c: i % 3 ? CLR.brass : '#cfd3da' });
+      for (let i = 0; i < 3; i++) spawnP({ shape: 'leaf', x, y: y - r, vx: rnd(-25, 25), vy: rnd(-70, -35), g: 60, spin: rnd(-3, 3), r: 4, life: 1.2, c: theme().plume, sway: 30, ph: i });
+      spawnP({ shape: 'disc', x: x + r * 0.6, y: y + r * 0.5, vx: (Math.random() < 0.5 ? -1 : 1) * 110, vy: -90, g: 380, floor: y + r * 0.9, spin: 9, r: r * 0.6, life: 1.6, c: CLR.gold });
+      spawnP({ text: 'CLANG!', x, y: y - r * 1.8, vy: -34, life: 1.0, c: '#ffd36a' });
+    } else if (who === 'satyr') { // spins away in a flurry of leaves, with a bleat
+      sfx.bleat();
+      for (let i = 0; i < 12; i++) spawnP({ shape: 'leaf', x, y, vx: rnd(-90, 90), vy: rnd(-110, -20), g: 40, spin: rnd(-9, 9), r: rnd(3, 5), life: rnd(0.8, 1.3), c: i % 4 ? CLR.leaf : CLR.petal, sway: 40, ph: i });
+      for (let i = 0; i < 5; i++) spawnP({ x, y, vx: rnd(-70, 70), vy: rnd(-90, -30), g: 90, r: 2.6, life: 1.0, c: CLR.petal });
+      spawnP({ text: 'BAA!', x, y: y - r * 1.8, vy: -34, life: 1.0, c: '#c9e88a' });
+    } else { // the ghost stretches thin and unspools into wisps
+      sfx.ghostDie();
+      for (let i = 0; i < 9; i++) spawnP({ shape: 'wisp', x: x + rnd(-r, r), y: y + r * 0.6, vx: 0, vy: -rnd(40, 110), sway: rnd(30, 60), ph: i * 1.3, r: cs * 0.06, life: rnd(0.8, 1.3), c: CLR.cream });
+      puffs(x, y, 5, '#dfe6ff', 40);
+      spawnP({ text: 'Oooo...', x, y: y - r * 1.8, vy: -26, life: 1.2, c: '#dfe6ff' });
+    }
+  }
+  function updateDeaths(dt) {
+    const tick = e => { if (e.dead) { e.dead.t += dt; if (e.dead.t >= e.dead.dur) e.dead = null; } if (e.spawnT > 0) e.spawnT = Math.max(0, e.spawnT - dt); };
+    ghosts.forEach(tick); tick(spook); if (me.spawnT > 0) me.spawnT = Math.max(0, me.spawnT - dt);
+    const d = game.dying;
+    if (game.state === 'dying' && d) {
+      d.t += dt; me.dead.t = d.t; d.last -= dt;
+      if (d.kind === 'sad' && d.last <= 0) { d.last = 0.08; [-1, 1].forEach(sd => spawnP({ x: me.x + sd * cs * 0.1, y: me.y - cs * 0.12, vx: sd * rnd(8, 30), vy: rnd(-20, 10), g: 260, r: 2.4, life: 0.8, c: CLR.tear })); }
+      if (d.kind === 'burn' && d.last <= 0) { d.last = 0.06; spawnP({ shape: 'wisp', x: me.x + rnd(-8, 8), y: me.y - cs * 0.1, vx: rnd(-20, 20), vy: -rnd(40, 90), r: cs * 0.06, life: 0.6, c: Math.random() < 0.5 ? CLR.ember : CLR.star, ph: Math.random() * 6 }); }
+      if (d.t >= d.dur) finishDeath();
+    }
+  }
+  // draw an entity through its death or spawn-in transform (vector styles)
+  function withDeath(e, x, y, fn) {
+    const d = e.dead, sp = e.spawnT > 0 ? 1 - e.spawnT / 0.8 : null;
+    if (!d && sp == null) { fn(); return; }
+    let rot = 0, sx = 1, sy = 1, dx = 0, dy = 0, a = 1, piv = 0;
+    if (sp != null && !d) { const k = easeOutBack(sp); sx = sy = Math.max(0.05, k); a = clamp(sp * 2, 0, 1); }
+    if (d) {
+      const p = clamp(d.t / d.dur, 0, 1);
+      if (d.kind === 'knock') { const side = -(me.face || 1); if (p < 0.2) { rot = Math.sin(p * 140) * 0.1; } else { const q = clamp((p - 0.2) / 0.45, 0, 1); rot = side * 1.5 * q * q; dy = -Math.abs(Math.sin(q * 4.2)) * cs * 0.07 * (1 - q); } piv = cs * 0.4; a = p > 0.65 ? 1 - ((p - 0.65) / 0.35) * 0.85 : 1; }
+      else if (d.kind === 'sad') { const q = Math.min(1, p * 2.2); sy = 1 - 0.22 * q; sx = 1 + 0.08 * q; rot = -0.2 * q + Math.sin(p * 9) * 0.02; piv = cs * 0.4; a = p > 0.7 ? 1 - ((p - 0.7) / 0.3) * 0.7 : 1; }
+      else if (d.kind === 'burn') { dy = -Math.sin(p * Math.PI) * cs * 1.0; rot = p * 12.5; const s2 = 1 - 0.5 * Math.max(0, (p - 0.55) / 0.45); sx = sy = s2; a = 1 - Math.max(0, (p - 0.7) / 0.3) * 0.9; }
+      else if (d.kind === 'hoplite') { const q = Math.min(1, p * 1.6); sx = 1 + 0.55 * q; sy = Math.max(0.12, 1 - 0.88 * q); piv = cs * 0.25; a = p < 0.5 ? 1 : 1 - (p - 0.5) * 2; }
+      else if (d.kind === 'satyr') { rot = p * 18.8; sx = sy = Math.max(0.02, 1 - Math.pow(p, 1.4)); dy = -Math.sin(p * Math.PI) * cs * 0.3; a = 1 - p * p; }
+      else if (d.kind === 'ghost') { sx = Math.max(0.2, 1 - 0.55 * p); sy = 1 + 1.1 * p; dy = -cs * 0.8 * p; a = 1 - Math.pow(p, 1.3); }
+    }
+    ctx.save(); ctx.globalAlpha *= clamp(a, 0, 1); ctx.translate(x + dx, y + dy + piv); ctx.rotate(rot); ctx.scale(sx, sy); ctx.translate(-x, -y - piv);
+    fn(); ctx.restore();
+  }
+  // special death particles for the vector styles
+  function shapePart(c, p, a, col) {
+    c.save(); c.translate(p.x, p.y); c.rotate(p.rot || 0); c.globalAlpha *= a; c.fillStyle = col; c.strokeStyle = col; c.lineCap = 'round';
+    if (p.shape === 'ray') { c.lineWidth = 3; c.beginPath(); c.moveTo(0, 0); c.lineTo((p.len || 14) * (0.4 + 0.6 * a), 0); c.stroke(); }
+    else if (p.shape === 'shard') { const q = p.r; c.beginPath(); c.moveTo(-q, 0); c.lineTo(0, -q * 0.7); c.lineTo(q, 0); c.lineTo(0, q * 0.7); c.closePath(); c.fill(); }
+    else if (p.shape === 'leaf') { c.beginPath(); c.ellipse(0, 0, p.r * 1.5, p.r * 0.6, 0, 0, 6.283); c.fill(); }
+    else if (p.shape === 'star') { const q = p.r * 2; c.beginPath(); c.moveTo(0, -q); c.lineTo(q * 0.28, -q * 0.28); c.lineTo(q, 0); c.lineTo(q * 0.28, q * 0.28); c.lineTo(0, q); c.lineTo(-q * 0.28, q * 0.28); c.lineTo(-q, 0); c.lineTo(-q * 0.28, -q * 0.28); c.closePath(); c.fill(); }
+    else if (p.shape === 'puff') { c.globalAlpha *= 0.55; c.beginPath(); c.arc(0, 0, p.r, 0, 6.283); c.fill(); }
+    else if (p.shape === 'ring') { c.lineWidth = 3; c.beginPath(); c.arc(0, 0, p.r, 0, 6.283); c.stroke(); }
+    else if (p.shape === 'wisp') { c.beginPath(); flame(c, 0, 0, p.r, game.clock, p.ph || 0); c.fill(); }
+    else if (p.shape === 'disc') { const w = Math.max(0.12, Math.abs(Math.cos(p.rot || 0))); c.beginPath(); c.ellipse(0, 0, p.r * w, p.r, 0, 0, 6.283); c.fill(); c.strokeStyle = '#14100d'; c.lineWidth = 2; c.stroke(); }
+    c.restore();
+  }
+
   /* ---------- update ---------- */
   function update(dt) {
     game.clock += dt;
@@ -714,12 +811,13 @@ body { margin: 0; }
       if (f.t >= 0.55) { shown[f.key]++; pops[f.key][f.key === 'wisps' ? Math.floor((f.idx * trackGeom('wisps').units) / trackGeom('wisps').n) : f.idx] = game.clock; burst(f.tx, f.ty, theme().accent, 6, 70); flyers.splice(i, 1); }
     }
 
+    updateDeaths(dt);
     updateHazards();
     if (kb.on && game.state !== 'over') { ptr.x = me.x; ptr.y = me.y - cs * 0.55; ptr.t = performance.now(); } // keyboard play: the guide rides above the minotaur
     // once the minotaur has reached your guide and you've stopped, it picks the guide up
     const idle = (performance.now() - (ptr.t || 0)) / 1000 > 0.4, caughtUp = me.A === me.B && Math.abs(ptr.x - px(me.A)) < cs * 0.5 && Math.abs(ptr.y - py(me.A)) < cs * 0.5;
     game.hover += ((caughtUp && idle && game.state !== 'over' ? 1 : 0) - game.hover) * Math.min(1, dt * 7);
-    if (game.state !== 'over') steerMe(dt);
+    if (game.state !== 'over' && game.state !== 'dying') steerMe(dt);
 
     if (playing) {
       const meCell = cellAt(me.x, me.y);
@@ -743,7 +841,7 @@ body { margin: 0; }
       // ghosts hunt you
       const dMe = bfs(meCell), dDecoy = decoy ? bfs(decoy.i) : null, dMirror = bfs(mirrorCell(meCell));
       for (const g of ghosts) {
-        if (g.eaten > 0) { g.eaten -= dt; if (g.eaten <= 0) Object.assign(g, newGhost(g.home, g.k)); continue; }
+        if (g.eaten > 0) { g.eaten -= dt; if (g.eaten <= 0) { Object.assign(g, newGhost(g.home, g.k)); spawnP({ shape: 'ring', x: g.x, y: g.y, r: 4, grow: 70, life: 0.6, c: theme().accent }); } continue; }
         g.stun = Math.max(0, g.stun - dt); if (g.emote) g.emote.t -= dt;
         if (game.ready <= 0 && fx.cold <= 0 && g.stun <= 0) {
           g.mt -= dt;
@@ -761,12 +859,12 @@ body { margin: 0; }
           burst(decoy.x, decoy.y, TYPES.mirror.c, 20, 200); decoy = null; fx.mirror = 0; g.stun = 2.5; bump('fooled', gp.x, gp.y); sfx.fool();
           addScore(50, gp.x, gp.y, '+50 fooled', TYPES.mirror.c);
         }
-        if (fx.cold > 0 || g.stun > 0) continue;
+        if (fx.boo <= 0 && (fx.cold > 0 || g.stun > 0)) continue; // frozen or dazed wardens are harmless, unless you can eat them
         if (Math.hypot(gp.x - me.x, gp.y - me.y) < cs * 0.42) {
           if (fx.boo > 0) {
             game.chain = Math.min(game.chain + 1, 4);
             addScore(200 * game.chain, gp.x, gp.y, '+' + 200 * game.chain, TYPES.boo.c);
-            burst(gp.x, gp.y, TYPES.boo.c, 26, 240); g.eaten = 4; bump('catches', gp.x, gp.y); sfx.catch(); g.x = g.y = -999;
+            burst(gp.x, gp.y, TYPES.boo.c, 14, 200); bump('catches', gp.x, gp.y); sfx.catch(); g.x = gp.x; g.y = gp.y; killEnemy(g, g.k % 2 ? 'satyr' : 'hoplite');
           } else if (game.invuln <= 0) { caught('warden'); break; }
         }
       }
@@ -790,7 +888,15 @@ body { margin: 0; }
 
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
-      p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; if (!p.text) p.vy *= 0.96;
+      p.life -= dt;
+      if (p.orbit) { p.orbit.a += p.orbit.s * dt; p.x = me.x + Math.cos(p.orbit.a) * p.orbit.r; p.y = me.y - cs * 0.5 + Math.sin(p.orbit.a) * p.orbit.r * 0.35; }
+      else {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        const dr = p.drag || 0.96; p.vx *= dr;
+        if (p.g) { p.vy += p.g * dt; if (p.floor && p.y > p.floor) { p.y = p.floor; p.vy *= -0.35; p.vx *= 0.9; } } else if (!p.text) p.vy *= dr;
+        if (p.sway) p.x += Math.sin(game.clock * 6 + (p.ph || 0)) * p.sway * dt;
+      }
+      p.rot = (p.rot || 0) + (p.spin || 0) * dt; if (p.grow) p.r += p.grow * dt;
       if (p.life <= 0) parts.splice(i, 1);
     }
     updateHud();
@@ -992,7 +1098,7 @@ body { margin: 0; }
   // where the guide is drawn: at your pointer, or lifted above the minotaur's head once it has caught up and you've stopped
   const guidePos = () => { const h = game.hover, hx = me.x, hy = me.y - cs * 0.82; return { x: ptr.x + (hx - ptr.x) * h, y: ptr.y + (hy - ptr.y) * h }; };
   function drawSpook(g) {
-    if (g.eaten > 0) return;
+    if (g.eaten > 0 && !g.dead) return;
     const fx = game.fx, T = theme(), t = game.clock, r = cs * 0.33, x = g.x, y = g.y + Math.sin(t * 3) * 2;
     const scared = fx.boo > 0, frozen = fx.cold > 0, dazed = g.stun > 0;
     let fill = T.cream;
@@ -1029,7 +1135,7 @@ body { margin: 0; }
     ctx.restore();
   }
   function drawWarden(g) {
-    if (g.eaten > 0) return;
+    if (g.eaten > 0 && !g.dead) return;
     const fx = game.fx, T = theme(), t = game.clock, r = cs * 0.27, x = g.x, y = g.y + Math.sin(t * 6 + g.k) * 1.2;
     const scared = fx.boo > 0, frozen = fx.cold > 0, dazed = g.stun > 0, chasing = g.mode === 'chase' && !scared && !frozen && !dazed;
     const satyr = g.k % 2 === 1;
@@ -1130,6 +1236,7 @@ body { margin: 0; }
   function drawParts() {
     parts.forEach(p => {
       const a = clamp(p.life / p.max, 0, 1);
+      if (p.shape) { shapePart(ctx, p, a, p.c); return; }
       ctx.globalAlpha = a;
       if (p.text) { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '800 15px Gabarito, sans-serif'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.strokeStyle = '#14100d'; ctx.strokeText(p.text, p.x, p.y); ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, p.y); }
       else { ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.4 + a * 0.6), 0, 6.283); ctx.fill(); }
@@ -1137,6 +1244,7 @@ body { margin: 0; }
     ctx.globalAlpha = 1;
   }
   function drawGuide() {
+      if (game.state === 'dying' && game.dying && game.dying.kind === 'sad') return;
     const T = theme(), t = game.clock, R = cs * 0.24 + 6, k = R / 18, gp = guidePos();
     const gd = spook && spook.eaten <= 0 ? Math.hypot(spook.x - ptr.x, spook.y - ptr.y) : 1e9;
     const danger = clamp(1 - (gd - R) / (cs * 2.2), 0, 1) * (game.fx.boo > 0 ? 0 : 1); // the ghost is closing in
@@ -1240,12 +1348,29 @@ body { margin: 0; }
     let P = 4, LW = 0, LH = 0, stat = null, lo2 = null, L = null;
     const X = v => Math.round(v / P);
     function spr(rows, cols, x, y, o) {
-      for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++) {
+      const R = rows.length, Wd = rows[0].length;
+      for (let j = 0; j < R; j++) for (let i = 0; i < rows[j].length; i++) {
         let ch = rows[j][i]; if (ch === '.') continue;
         if (o && o.dither && ((i + j) & 1)) continue;
+        if (o && o.fade && ((i * 7 + j * 13 + ((i * j) % 5) * 3) % 10) / 10 < o.fade) continue; // dissolve pixel by pixel
         if (o && o.shade && ch === 'w' && i >= o.shade) ch = 'h';
-        L.fillStyle = (o && o.mono) || cols[ch]; L.fillRect(x + i, y + j, 1, 1);
+        let dx = i, dy = j;
+        if (o && o.rot) { dx = o.rot > 0 ? R - 1 - j : j; dy = o.rot > 0 ? i : Wd - 1 - i; } // lying on its side
+        if (o && o.sq) dy = Math.round(dy * (1 - o.sq)); // flattened
+        L.fillStyle = (o && o.mono) || cols[ch]; L.fillRect(x + dx, y + dy, 1, 1);
       }
+    }
+    // how a dying or spawning being is drawn in pixels
+    function pxd(e) {
+      const d = e.dead, sp = e.spawnT > 0 ? 1 - e.spawnT / 0.8 : null; if (!d && sp == null) return null;
+      if (!d) return { fade: 1 - sp, dx: 0, dy: 0 };
+      const p = clamp(d.t / d.dur, 0, 1);
+      if (d.kind === 'hoplite') return { sq: Math.min(1, p * 1.6) * 0.8, fade: Math.max(0, (p - 0.5) * 2), dx: 0, dy: Math.round(Math.min(1, p * 1.6) * 3) };
+      if (d.kind === 'satyr') return { fade: p * p, dx: Math.round(Math.sin(p * 40) * 1.5), dy: -Math.round(Math.sin(p * Math.PI) * 5) };
+      if (d.kind === 'ghost') return { fade: Math.pow(p, 1.3), dx: 0, dy: -Math.round(p * 9) };
+      if (d.kind === 'knock') return { rot: p > 0.2 ? -(me.face || 1) : 0, fade: Math.max(0, ((p - 0.65) / 0.35) * 0.85), dx: p < 0.2 ? Math.round(Math.sin(p * 120)) : 0, dy: p > 0.2 ? 3 : 0 };
+      if (d.kind === 'sad') return { sq: 0.22 * Math.min(1, p * 2.2), fade: p > 0.7 ? ((p - 0.7) / 0.3) * 0.7 : 0, dx: 0, dy: Math.round(2 * Math.min(1, p * 2.2)) };
+      return { fade: Math.max(0, (p - 0.7) / 0.3) * 0.9, dx: 0, dy: -Math.round(Math.sin(p * Math.PI) * 9) };
     }
     const disc = (cx0, cy0, r, col) => { L.fillStyle = col; for (let dy = -r - 1; dy <= r + 1; dy++) for (let dx = -r - 1; dx <= r + 1; dx++) if (dx * dx + dy * dy <= r * r) L.fillRect(cx0 + dx, cy0 + dy, 1, 1); };
     const ring = (cx0, cy0, r, col) => { L.fillStyle = col; const n = Math.max(8, Math.round(r * 7)); for (let i = 0; i < n; i++) { const a = (i / n) * 6.283; L.fillRect(Math.round(cx0 + Math.cos(a) * r), Math.round(cy0 + Math.sin(a) * r), 1, 1); } };
@@ -1302,22 +1427,25 @@ body { margin: 0; }
       ring(x, y, 6 + Math.sin(t * 6), TYPES.mirror.c);
     }
     function spookPx(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const s = wstate(g), t = game.clock, x = X(g.x) - 5, y = X(g.y) - 5 + Math.round(Math.sin(t * 3));
       let cols = { w: '#f4f4f4', h: '#94b0c2', e: '#ffffff', k: '#1a1c2c' };
       if (s.scared) cols = { ...cols, w: flashing() ? '#ffffff' : '#7a8cff', h: '#5a6df0' };
       if (s.frozen) cols = { ...cols, w: '#cfeaff', h: '#9fc4dc' };
-      spr(Math.floor(t * 4) % 2 ? SPR.ghostA : SPR.ghostB, cols, x, y, { shade: 9, dither: s.dazed });
+      const dd = pxd(g) || {};
+      spr(Math.floor(t * 4) % 2 ? SPR.ghostA : SPR.ghostB, cols, x + (dd.dx || 0), y + (dd.dy || 0), { shade: 9, dither: s.dazed, fade: dd.fade, sq: dd.sq });
     }
     function wardenPx(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const s = wstate(g), t = game.clock, sat = g.k % 2 === 1, T = theme();
       const base = { s: '#3b3b5c', f: '#e8b27a', w: '#ffffff', k: '#1a1c2c', r: sat ? '#ff4d6d' : '#ff4d6d', g: '#ffcd75', h: '#f4f4f4', d: '#5d275d', e: '#c9966a' };
       const cols = stateCols(s, base);
       if (!s.scared && !s.frozen) cols.r = T.plume;
       const w = sat ? 9 : 9, x = X(g.x) - 4, y = X(g.y) - (sat ? 4 : 5) + Math.round(Math.sin(t * 6 + g.k) * 0.6);
-      spr(sat ? SPR.sat : SPR.hop, cols, x, y, { dither: s.dazed });
-      if (!sat) spr(SPR.shield, cols, x + 5, y + 5, { dither: s.dazed });
+      const dd = pxd(g);
+      spr(sat ? SPR.sat : SPR.hop, cols, x + (dd ? dd.dx : 0), y + (dd ? dd.dy : 0), { dither: s.dazed, fade: dd && dd.fade, sq: dd && dd.sq });
+      if (dd && g.dead) return; // no mood or shield while falling apart (the shield rolls away on its own)
+      if (!sat) spr(SPR.shield, cols, x + 5 + (dd ? dd.dx : 0), y + 5 + (dd ? dd.dy : 0), { dither: s.dazed, fade: dd && dd.fade });
       // mood: brows and mouth
       L.fillStyle = '#1a1c2c';
       if (s.chasing) { L.fillRect(x + 2, y + (sat ? 3 : 4), 2, 1); L.fillRect(x + 5, y + (sat ? 3 : 4), 2, 1); }
@@ -1328,10 +1456,12 @@ body { margin: 0; }
     function mePx() {
       const h = game.hover, t = game.clock, x = X(me.x) - 5, y = X(me.y) - 8 - (h > 0.5 ? Math.abs(Math.round(Math.sin(t * 7))) : 0);
       const dith = game.invuln > 0 && Math.floor(t * 10) % 2;
-      if (h > 0.3) { const gp = guidePos(); L.fillStyle = '#b8602f'; for (let j = y + 12; j >= X(gp.y) + 3; j--) { L.fillRect(x - 1, j, 1, 1); L.fillRect(x + 11, j, 1, 1); } }
-      spr(h > 0.5 ? SPR.minoHappy : SPR.mino, { w: '#f4f4f4', b: '#b8602f', k: '#1a1c2c', s: '#e8b27a' }, x, y, { dither: dith });
+      const dd = pxd(me);
+      if (h > 0.3 && !me.dead) { const gp = guidePos(); L.fillStyle = '#b8602f'; for (let j = y + 12; j >= X(gp.y) + 3; j--) { L.fillRect(x - 1, j, 1, 1); L.fillRect(x + 11, j, 1, 1); } }
+      spr(h > 0.5 && !me.dead ? SPR.minoHappy : SPR.mino, { w: '#f4f4f4', b: '#b8602f', k: '#1a1c2c', s: '#e8b27a' }, x + (dd ? dd.dx : 0), y + (dd ? dd.dy : 0), { dither: dith, fade: dd && dd.fade, sq: dd && dd.sq, rot: dd && dd.rot });
     }
     function guidePx() {
+      if (game.state === 'dying' && game.dying && game.dying.kind === 'sad') return;
       const gp = guidePos(), x = X(gp.x), y = X(gp.y), t = game.clock;
       const gd = spook && spook.eaten <= 0 ? Math.hypot(spook.x - ptr.x, spook.y - ptr.y) : 1e9, R = cs * 0.24 + 6;
       const danger = clamp(1 - (gd - R) / (cs * 2.2), 0, 1) * (game.fx.boo > 0 ? 0 : 1), col = danger > 0.05 ? '#ff4d4d' : '#ffcd75';
@@ -1341,7 +1471,13 @@ body { margin: 0; }
       L.fillStyle = '#f4f4f4'; L.fillRect(x - 1, y - 1, 3, 3); L.fillStyle = danger > 0.05 && Math.floor(t * 8) % 2 ? '#1a1c2c' : '#ff4d4d'; L.fillRect(x, y, 1, 1);
     }
     function partsPx() {
-      parts.forEach(p => { if (p.text) return; const a = clamp(p.life / p.max, 0, 1); L.globalAlpha = a; L.fillStyle = p.c; const sz = a > 0.5 ? 2 : 1; L.fillRect(X(p.x), X(p.y), sz, sz); });
+      parts.forEach(p => {
+        if (p.text) return; const a = clamp(p.life / p.max, 0, 1); L.globalAlpha = a; L.fillStyle = p.c;
+        if (p.shape === 'ray') { const n = Math.max(2, Math.round((p.len || 14) / P)); for (let k = 0; k < n; k++) L.fillRect(X(p.x + Math.cos(p.rot || 0) * k * P), X(p.y + Math.sin(p.rot || 0) * k * P), 1, 1); }
+        else if (p.shape === 'ring') ring(X(p.x), X(p.y), p.r / P, p.c);
+        else if (p.shape) { const sz = Math.max(1, Math.round(((p.r || 3) / P) * 1.3)); L.fillRect(X(p.x) - (sz >> 1), X(p.y) - (sz >> 1), sz, sz); }
+        else { const sz = a > 0.5 ? 2 : 1; L.fillRect(X(p.x), X(p.y), sz, sz); }
+      });
       L.globalAlpha = 1;
     }
     const sprTrack = (kind, x, y, filled, pp, t) => {
@@ -1467,7 +1603,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function wardenR(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.27, x = g.x, y = g.y + Math.sin(t * 6 + g.k) * 1.2, sat = g.k % 2 === 1;
       let body = pl.b, acc = pl.a; if (s.scared) { body = pl.a; acc = pl.b; }
       ctx.save(); ctx.globalAlpha = s.dazed ? 0.5 : 1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -1499,7 +1635,7 @@ body { margin: 0; }
       drawEmoteWith(g, x, y, r, sat, '800 ' + r * 1.15 + 'px "Rubik Mono One", sans-serif', pl.paper, pl.a, pl.b);
     }
     function spookR(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.33, x = g.x, y = g.y + Math.sin(t * 3) * 2;
       const body = () => { ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); const bot = y + r * 0.95, n = 4, w = (2 * r) / n; ctx.lineTo(x + r, bot); for (let i = 0; i < n; i++) { const x0 = x + r - i * w; ctx.quadraticCurveTo(x0 - w / 2, bot + (i % 2 ? 1 : -1) * r * 0.28 * Math.sin(t * 5 + i), x0 - w, bot); } ctx.closePath(); };
       ctx.save(); ctx.globalAlpha = s.dazed ? 0.55 : 1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -1532,6 +1668,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function guideR() {
+      if (game.state === 'dying' && game.dying && game.dying.kind === 'sad') return;
       const pl = pal(), gp = guidePos(), t = game.clock, R = cs * 0.24 + 6, k = R / 18;
       const gd = spook && spook.eaten <= 0 ? Math.hypot(spook.x - ptr.x, spook.y - ptr.y) : 1e9, danger = clamp(1 - (gd - R) / (cs * 2.2), 0, 1) * (game.fx.boo > 0 ? 0 : 1);
       ctx.save(); ctx.fillStyle = pl.paper; ctx.beginPath(); ctx.arc(gp.x, gp.y, R * 1.15, 0, 6.283); ctx.fill();
@@ -1542,7 +1679,7 @@ body { margin: 0; }
     }
     function partsR() {
       const pl = pal();
-      parts.forEach((p, i) => { const a = clamp(p.life / p.max, 0, 1); ctx.save(); ctx.globalAlpha = a;
+      parts.forEach((p, i) => { const a = clamp(p.life / p.max, 0, 1); if (p.shape) { ctx.save(); ctx.globalCompositeOperation = 'multiply'; shapePart(ctx, p, a, i % 2 ? pl.a : pl.b); ctx.restore(); return; } ctx.save(); ctx.globalAlpha = a;
         if (p.text) { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '15px "Rubik Mono One", sans-serif'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = pl.paper; ctx.strokeText(p.text, p.x, p.y); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = pl.b; ctx.fillText(p.text, p.x, p.y); ctx.fillStyle = ra(pl.a, 0.9); ctx.fillText(p.text, p.x + 1.5, p.y + 1.5); }
         else { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = i % 2 ? pl.a : pl.b; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.4 + a * 0.6), 0, 6.283); ctx.fill(); }
         ctx.restore(); });
@@ -1551,7 +1688,7 @@ body { margin: 0; }
       font: '"Rubik Mono One"', ready: false, build,
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
-        wisps(); decoyR(); boxes.forEach(relic); ghosts.forEach(wardenR); spookR(spook); meR(); partsR(); guideR(); drawTracks();
+        wisps(); decoyR(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenR(g))); withDeath(spook, spook.x, spook.y, () => spookR(spook)); withDeath(me, me.x, me.y, meR); partsR(); guideR(); drawTracks();
         ensureGrain(); ctx.drawImage(grainCv, 0, 0, W, H);
       },
       banner() {
@@ -1653,7 +1790,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function spookP(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.33, x = g.x, y = g.y + Math.sin(t * 3) * 2, lift = 4 + Math.sin(t * 1.3) * 2;
       let fill = '#fffaf0'; if (s.scared) fill = flashing() ? '#ffffff' : '#7a8cff'; if (s.frozen) fill = '#cfeaff';
       ctx.save(); ctx.globalAlpha = s.dazed ? 0.55 : 1;
@@ -1664,7 +1801,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function wardenP(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.27, x = g.x, y = g.y + Math.sin(t * 6 + g.k) * 1.2, sat = g.k % 2 === 1;
       let body = sat ? '#8a5a3c' : '#6a4c93'; if (s.scared) body = flashing() ? '#ffffff' : '#5a6df0'; if (s.frozen) body = '#cfeaff';
       ctx.save(); ctx.globalAlpha = s.dazed ? 0.55 : 1; ctx.lineCap = 'round';
@@ -1701,13 +1838,14 @@ body { margin: 0; }
     }
     function star(x, y, ro, ri, n, rot, col, dy) { sh(dy, dy * 2, 0.4); ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < n * 2; i++) { const a = rot + (i * Math.PI) / n, rr0 = i % 2 ? ri : ro; ctx.lineTo(x + Math.cos(a) * rr0, y + Math.sin(a) * rr0); } ctx.closePath(); ctx.fill(); noSh(); }
     function guideP() {
+      if (game.state === 'dying' && game.dying && game.dying.kind === 'sad') return;
       const gp = guidePos(), t = game.clock, R = cs * 0.24 + 6, k = R / 18;
       const gd = spook && spook.eaten <= 0 ? Math.hypot(spook.x - ptr.x, spook.y - ptr.y) : 1e9, danger = clamp(1 - (gd - R) / (cs * 2.2), 0, 1) * (game.fx.boo > 0 ? 0 : 1), sp = 1 + danger * 4;
       ctx.save(); star(gp.x, gp.y, 21 * k, 12 * k, 8, t * 0.5 * sp, danger > 0.05 ? '#e0301c' : '#e0553c', 3); star(gp.x, gp.y, 16 * k, 9 * k, 8, -t * 0.7 * sp, '#f2b134', 2.4); star(gp.x, gp.y, 9.5 * k, 5 * k, 6, t * 0.9 * sp, '#fff6dc', 1.8); ctx.restore();
     }
     function partsP() {
       const pl = pal();
-      parts.forEach((p, i) => { const a = clamp(p.life / p.max, 0, 1); ctx.save(); ctx.globalAlpha = a;
+      parts.forEach((p, i) => { const a = clamp(p.life / p.max, 0, 1); if (p.shape) { shapePart(ctx, p, a, p.c); return; } ctx.save(); ctx.globalAlpha = a;
         if (p.text) { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '700 16px Fredoka, sans-serif'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = pl.ink; ctx.strokeText(p.text, p.x, p.y); ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, p.y); }
         else { ctx.translate(p.x, p.y); ctx.rotate(i); sh(1.5, 2, 0.35); ctx.fillStyle = p.c; const q = p.r * (0.6 + a * 0.6) * 1.4; ctx.fillRect(-q, -q * 0.7, q * 2, q * 1.4); noSh(); }
         ctx.restore(); });
@@ -1716,7 +1854,7 @@ body { margin: 0; }
       font: 'Fredoka', ready: false, build,
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
-        wisps(); decoyP(); boxes.forEach(relic); ghosts.forEach(wardenP); spookP(spook); meP(); partsP(); guideP(); drawTracks();
+        wisps(); decoyP(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenP(g))); withDeath(spook, spook.x, spook.y, () => spookP(spook)); withDeath(me, me.x, me.y, meP); partsP(); guideP(); drawTracks();
       },
       banner() {
         if (!game.banner) return;
@@ -1823,7 +1961,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function spookW(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.33, x = g.x, y = g.y + Math.sin(t * 3) * 2;
       let col = 'rgba(176,206,226,0.85)'; if (s.scared) col = flashing() ? 'rgba(255,255,255,0.9)' : 'rgba(110,130,240,0.88)'; if (s.frozen) col = 'rgba(200,232,255,0.92)';
       const path = () => { ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); const bot = y + r * 0.95, n = 4, w = (2 * r) / n; ctx.lineTo(x + r, bot); for (let i = 0; i < n; i++) { const x0 = x + r - i * w; ctx.quadraticCurveTo(x0 - w / 2, bot + (i % 2 ? 1 : -1) * r * 0.28 * Math.sin(t * 5 + i), x0 - w, bot); } ctx.closePath(); };
@@ -1836,7 +1974,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function wardenW(g) {
-      if (g.eaten > 0) return;
+      if (g.eaten > 0 && !g.dead) return;
       const pl = pal(), s = wstate(g), t = game.clock, r = cs * 0.27, x = g.x, y = g.y + Math.sin(t * 6 + g.k) * 1.2, sat = g.k % 2 === 1;
       let col = sat ? 'rgba(150,100,60,0.88)' : 'rgba(181,82,74,0.88)'; if (s.scared) col = flashing() ? 'rgba(255,255,255,0.9)' : 'rgba(110,130,240,0.88)'; if (s.frozen) col = 'rgba(200,232,255,0.92)';
       ctx.save(); ctx.globalAlpha = s.dazed ? 0.55 : 1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -1874,6 +2012,7 @@ body { margin: 0; }
       ctx.restore();
     }
     function guideW() {
+      if (game.state === 'dying' && game.dying && game.dying.kind === 'sad') return;
       const pl = pal(), gp = guidePos(), t = game.clock, R = cs * 0.24 + 6, k = R / 18;
       const gd = spook && spook.eaten <= 0 ? Math.hypot(spook.x - ptr.x, spook.y - ptr.y) : 1e9, danger = clamp(1 - (gd - R) / (cs * 2.2), 0, 1) * (game.fx.boo > 0 ? 0 : 1);
       ctx.save(); ctx.globalCompositeOperation = 'multiply'; bloom(ctx, gp.x, gp.y, 34 * k, danger > 0.05 ? 'rgba(235,110,80,0.85)' : `rgba(${pl.gold},0.85)`); bloom(ctx, gp.x + 3, gp.y - 2, 20 * k, 'rgba(240,130,60,0.5)'); ctx.globalCompositeOperation = 'source-over';
@@ -1883,7 +2022,7 @@ body { margin: 0; }
     }
     function partsW() {
       const pl = pal();
-      parts.forEach(p => { const a = clamp(p.life / p.max, 0, 1); ctx.save(); ctx.globalAlpha = a;
+      parts.forEach(p => { const a = clamp(p.life / p.max, 0, 1); if (p.shape) { shapePart(ctx, p, a, p.c); return; } ctx.save(); ctx.globalAlpha = a;
         if (p.text) { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '700 22px Caveat, cursive'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = pl.paper; ctx.strokeText(p.text, p.x, p.y); ctx.fillStyle = pl.ink; ctx.fillText(p.text, p.x, p.y); }
         else { ctx.globalCompositeOperation = 'multiply'; bloom(ctx, p.x, p.y, p.r * 2.2 * (0.5 + a * 0.5), wash(typeof p.c === 'string' && p.c[0] === '#' && p.c.length === 7 ? p.c : '#f0b83c', 0.8)); }
         ctx.restore(); });
@@ -1892,7 +2031,7 @@ body { margin: 0; }
       font: 'Caveat', ready: false, build,
       render(T) {
         ctx.drawImage(stat, 0, 0, W, H); drawHazards();
-        wisps(); decoyW(); boxes.forEach(relic); ghosts.forEach(wardenW); spookW(spook); meW(); partsW(); guideW(); drawTracks();
+        wisps(); decoyW(); boxes.forEach(relic); ghosts.forEach(g => withDeath(g, g.x, g.y, () => wardenW(g))); withDeath(spook, spook.x, spook.y, () => spookW(spook)); withDeath(me, me.x, me.y, meW); partsW(); guideW(); drawTracks();
         ensureGrain(); ctx.drawImage(grainCv, 0, 0, W, H);
       },
       banner() {
@@ -1934,9 +2073,9 @@ body { margin: 0; }
       ctx.drawImage(staticCv, 0, 0, W, H); drawHazards();
       drawDots(T); drawDecoy();
       boxes.forEach(drawBox);
-      ghosts.forEach(drawWarden);
-      drawSpook(spook);
-      drawMe(); drawParts(); drawGuide();
+      ghosts.forEach(g => withDeath(g, g.x, g.y, () => drawWarden(g)));
+      withDeath(spook, spook.x, spook.y, () => drawSpook(spook));
+      withDeath(me, me.x, me.y, drawMe); drawParts(); drawGuide();
       drawTracks();
     },
     track: {
